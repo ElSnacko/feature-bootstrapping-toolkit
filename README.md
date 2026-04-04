@@ -8,6 +8,10 @@ The **floor** parameter is the key output: it separates structural instability (
 
 This is a diagnostic tool, not a pass/fail gate.
 
+The toolkit provides **two complementary stability perspectives**:
+- **Marginal Stability** — measures whether feature *distributions* stabilize across bootstrap resamples
+- **SHAP Stability** — measures whether feature *contributions to model decisions* stabilize
+
 ---
 
 ## Installation
@@ -352,6 +356,98 @@ Expected output: `mean radius` has a lower complexity score than `symmetry error
 
 ---
 
+## SHAP Stability Analysis
+
+### The Problem: Marginal Space Blind Spot
+
+The default stability metrics measure stability in **marginal (univariate) space**—whether feature distributions look the same across bootstrap resamples. But models operate in a **nonlinear, interactive feature space** where:
+
+- A feature with stable marginal distribution can have unstable contributions to predictions
+- A feature with unstable marginal distribution can have stable model contributions
+- Marginal stability ≠ Model decision stability
+
+**Key finding:** In comparison analysis, 43.5% of features showed disagreement between marginal and SHAP stability:
+- 34.8% false alarms (marginal over-estimates risk)
+- 8.7% missed risks (marginal under-estimates risk)
+
+### The Solution: SHAP-Based Stability
+
+SHAP (SHapley Additive exPlanations) values measure how much each feature contributes to individual predictions. SHAP stability measures whether these contributions stabilize—directly measuring what the model "cares about."
+
+**When to use SHAP stability:**
+- Before production deployment to validate feature behavior
+- When features have complex interactions or non-linear relationships
+- For train vs OOT drift detection
+- When marginal stability gives unexpected results
+
+### Quick Example
+
+```python
+from bootstrap_stability import SHAPStability, TrainOOTStability, print_oot_report
+
+# Define model factory
+def lgbm_factory():
+    from lightgbm import LGBMClassifier
+    return LGBMClassifier(n_estimators=100, max_depth=6, random_state=42, verbose=-1)
+
+# SHAP-based stability with learning curves (same k/sqrt(n) + floor model)
+shap_stability = SHAPStability(model_factory=lgbm_factory)
+results = shap_stability.fit(X_train, y_train, pool_sizes, n_resamples=25)
+
+# Train vs OOT comparison for production monitoring
+oot_checker = TrainOOTStability(model_factory=lgbm_factory)
+drift_results = oot_checker.compare(X_train, y_train, X_oot, y_oot)
+print_oot_report(drift_results)
+```
+
+### SHAP Stability Metrics
+
+| Metric | Description | Interpretation |
+|--------|-------------|----------------|
+| Rank Stability | Kendall's W coefficient for feature importance rankings | `> 0.9` = stable importance |
+| Wasserstein | Distribution shift in SHAP space | `< 0.02` = low drift |
+| Direction Consistency | Sign stability across resamples | `> 0.95` = consistent direction |
+| Magnitude CV | Coefficient of variation of \|SHAP\| | `< 0.10` = stable magnitude |
+| Top-k Overlap | Jaccard overlap of top-k features | `> 0.7` = stable top features |
+
+### Train vs OOT Drift Detection
+
+The `TrainOOTStability` class compares SHAP patterns between training and out-of-time periods:
+
+```python
+from bootstrap_stability import TrainOOTStability, print_oot_report
+
+oot_checker = TrainOOTStability(model_factory=lgbm_factory)
+drift_results = oot_checker.compare(X_train, y_train, X_oot, y_oot)
+
+# Access drift metrics
+print(f"Rank correlation: {drift_results['drift_metrics']['rank_correlation']:.3f}")
+print(f"Direction flip rate: {drift_results['drift_metrics']['direction_flip_rate']:.1%}")
+print(f"Overall drift grade: {drift_results['drift_grade']}")  # A, B, C, D, F
+```
+
+**Drift grades:**
+
+| Grade | Score Range | Interpretation |
+|-------|-------------|----------------|
+| A | 0.00 - 0.10 | Minimal drift—feature behavior stable |
+| B | 0.10 - 0.25 | Moderate drift—monitor closely |
+| C | 0.25 - 0.40 | Significant drift—investigate |
+| D | 0.40 - 0.60 | Severe drift—consider retraining |
+| F | > 0.60 | Critical drift—model may be stale |
+
+### Detailed Documentation
+
+For comprehensive SHAP stability documentation including:
+- Mathematical definitions of all metrics
+- API reference for `SHAPStability` and `TrainOOTStability` classes
+- Integration patterns with existing toolkit
+- Advanced usage examples
+
+See: [`docs/shap_stability_design.md`](docs/shap_stability_design.md)
+
+---
+
 ## Design notes
 
 **Pool size varies, resample fraction is fixed.** Varying the fraction causes resamples to overlap heavily at high fractions, understating true instability. This is the core architectural choice.
@@ -361,3 +457,5 @@ Expected output: `mean radius` has a lower complexity score than `symmetry error
 **Bandwidth is fixed from the full dataset.** Computing a fresh bandwidth per resample would conflate KDE parameter instability with feature instability.
 
 **The floor, not the curve, is the signal.** A steep curve with a near-zero floor means the feature is fine — it just needs volume. A shallow curve with a high positive floor means more data won't help.
+
+**SHAP stability uses the same learning curve model.** The `k/sqrt(n) + floor` approach applies to SHAP metrics just as it does to marginal metrics, with floor representing irreducible decision-space instability.
