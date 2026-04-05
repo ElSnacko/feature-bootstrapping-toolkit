@@ -21,6 +21,11 @@ from .core import (
     fit_all_curves,
     compute_complexity_score,
     compute_percentile_stability,
+    get_complexity_score,
+    get_metric_category,
+    TARGET_AGNOSTIC_METRICS,
+    TARGET_DEPENDENT_METRICS,
+    get_metric_runner,
 )
 
 
@@ -43,6 +48,11 @@ class BootstrapStability:
         n_jobs=-1,
         random_state=42,
         version=VERSION,
+        estimate_alpha: bool = False,
+        alpha_bounds: tuple = (0.1, 1.0),
+        fixed_alpha: float = 0.5,
+        support_categorical: bool = False,
+        categorical_cardinality_threshold: int = 10,
     ):
         self.resample_frac = resample_frac
         self.n_resamples = n_resamples
@@ -60,6 +70,11 @@ class BootstrapStability:
         self.n_jobs = n_jobs
         self.random_state = random_state
         self.version = version
+        self.estimate_alpha = estimate_alpha
+        self.alpha_bounds = alpha_bounds
+        self.fixed_alpha = fixed_alpha
+        self.support_categorical = support_categorical
+        self.categorical_cardinality_threshold = categorical_cardinality_threshold
 
     def fit(self, df: pd.DataFrame, feature_col: str, target_col: str = None) -> dict:
         x_full = df[feature_col].dropna().values
@@ -75,11 +90,12 @@ class BootstrapStability:
 
         n_obs = len(x_full)
 
-        feature_type = detect_feature_type(x_full)
-        if feature_type == "categorical":
+        feature_type = detect_feature_type(x_full, self.categorical_cardinality_threshold)
+        if feature_type == "categorical" and not self.support_categorical:
             raise ValueError(
                 f"Feature '{feature_col}' is categorical ({feature_type}). "
-                "Only binary and continuous features are supported."
+                "Only binary and continuous features are supported by default. "
+                "Set support_categorical=True to enable categorical feature analysis."
             )
 
         imbalance_result = {"event_rate": np.nan, "imbalance_flag": False, "severity": "none"}
@@ -114,7 +130,7 @@ class BootstrapStability:
             f"resamples={self.n_resamples} per pool"
         )
 
-        metric_runner = MetricRunner(x_full, y_full, self.n_bins)
+        metric_runner = get_metric_runner(x_full, y_full, self.n_bins, feature_type)
 
         def _process_pool(pool_idx, n_pool):
             seed = self.random_state
@@ -193,12 +209,15 @@ class BootstrapStability:
             learning_curves,
             self.r2_threshold,
             self.extrapolate_to,
+            estimate_alpha=self.estimate_alpha,
+            alpha_bounds=self.alpha_bounds,
+            fixed_alpha=self.fixed_alpha,
         )
 
         for m in all_metric_names:
             learning_curves[m]["fit"] = fitted_curves.get(m, {})
 
-        complexity_score, per_metric_floors = compute_complexity_score(
+        complexity_score, per_metric_floors, complexity_scores = compute_complexity_score(
             fitted_curves, self.metric_weights, has_target
         )
 
@@ -231,6 +250,7 @@ class BootstrapStability:
             "excluded_pools": excluded_pools.tolist(),
             "learning_curves": learning_curves,
             "complexity_score": float(complexity_score) if np.isfinite(complexity_score) else np.nan,
+            "complexity_scores": complexity_scores,
             "per_metric_floors": per_metric_floors,
             "degenerate_rates": degenerate_rates,
             "woe_profiles": woe_profiles,

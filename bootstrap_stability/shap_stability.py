@@ -55,6 +55,19 @@ SHAP_METRIC_NAMES = [
     "topk_overlap",
 ]
 
+# SHAP metrics are all target-dependent (require model trained on target)
+SHAP_TARGET_DEPENDENT_METRICS = {
+    "rank_stability_global",
+    "rank_stability",
+    "wasserstein",
+    "js_divergence",
+    "direction_consistency",
+    "magnitude_cv",
+    "magnitude_iqr",
+    "topk_overlap",
+}
+SHAP_TARGET_AGNOSTIC_METRICS = set()  # SHAP metrics all require a trained model
+
 
 def _get_explainer(model, explainer_type: str, explainer_kwargs: dict = None):
     """
@@ -155,6 +168,7 @@ def _train_and_compute_shap(
     explainer_kwargs: dict = None,
     shap_subsample: int = None,
     random_state: int = None,
+    categorical_feature_indices: list = None,
 ) -> tuple:
     """
     Train model and compute SHAP values.
@@ -177,6 +191,8 @@ def _train_and_compute_shap(
         Subsample for SHAP computation.
     random_state : int, optional
         Random state.
+    categorical_feature_indices : list, optional
+        Indices of categorical features for native handling.
     
     Returns
     -------
@@ -185,7 +201,29 @@ def _train_and_compute_shap(
     """
     # Train model
     model = model_factory()
-    model.fit(X_boot, y_boot)
+    
+    # Handle categorical features for models with native support
+    if categorical_feature_indices is not None:
+        model_class_name = model.__class__.__name__
+        module_name = model.__class__.__module__.split(".")[0]
+        
+        # LightGBM native categorical support
+        if module_name == "lightgbm" or "lightgbm" in str(type(model)).lower():
+            model.fit(
+                X_boot, y_boot,
+                categorical_feature=categorical_feature_indices
+            )
+        # CatBoost native categorical support
+        elif module_name == "catboost" or "catboost" in str(type(model)).lower():
+            model.fit(
+                X_boot, y_boot,
+                cat_features=categorical_feature_indices
+            )
+        else:
+            # Standard fit for other models
+            model.fit(X_boot, y_boot)
+    else:
+        model.fit(X_boot, y_boot)
     
     # Compute SHAP values
     shap_values = _compute_shap_values(
@@ -300,6 +338,15 @@ class SHAPStability:
         extrapolate_to: list = None,
         metric_weights: dict = None,
         
+        # Alpha parameters for flexible learning curve
+        estimate_alpha: bool = False,
+        alpha_bounds: tuple = (0.1, 1.0),
+        fixed_alpha: float = 0.5,
+        
+        # Categorical feature support
+        support_categorical: bool = False,
+        categorical_feature_indices: list = None,
+        
         # Computation
         n_jobs: int = -1,
         random_state: int = 42,
@@ -327,6 +374,13 @@ class SHAPStability:
         self.extrapolate_to = extrapolate_to if extrapolate_to is not None else [500, 1000]
         self.metric_weights = metric_weights if metric_weights is not None else DEFAULT_SHAP_WEIGHTS
         
+        self.estimate_alpha = estimate_alpha
+        self.alpha_bounds = alpha_bounds
+        self.fixed_alpha = fixed_alpha
+        
+        self.support_categorical = support_categorical
+        self.categorical_feature_indices = categorical_feature_indices
+        
         self.n_jobs = n_jobs
         self.random_state = random_state
         self.store_raw = store_raw
@@ -336,6 +390,55 @@ class SHAPStability:
         """Print message if verbosity level is sufficient."""
         if self.verbose >= level:
             print(msg)
+    
+    def _train_model_with_categorical(self, model, X_boot: np.ndarray, y_boot: np.ndarray) -> Any:
+        """Train model with proper handling of categorical features.
+        
+        For models with native categorical support (LightGBM, CatBoost),
+        passes categorical_feature parameter to fit method.
+        
+        Parameters
+        ----------
+        model : Any
+            Unfitted model instance.
+        X_boot : np.ndarray
+            Training features.
+        y_boot : np.ndarray
+            Training target.
+        
+        Returns
+        -------
+        Any
+            Fitted model.
+        """
+        if not self.support_categorical or not self.categorical_feature_indices:
+            # Standard training without categorical handling
+            model.fit(X_boot, y_boot)
+            return model
+        
+        # Check if model supports categorical features natively
+        model_class_name = model.__class__.__name__
+        module_name = model.__class__.__module__.split(".")[0]
+        
+        # LightGBM native categorical support
+        if module_name == "lightgbm" or "lightgbm" in str(type(model)).lower():
+            model.fit(
+                X_boot, y_boot,
+                categorical_feature=self.categorical_feature_indices
+            )
+            return model
+        
+        # CatBoost native categorical support
+        if module_name == "catboost" or "catboost" in str(type(model)).lower():
+            model.fit(
+                X_boot, y_boot,
+                cat_features=self.categorical_feature_indices
+            )
+            return model
+        
+        # For other models, try standard fit (may require pre-encoded data)
+        model.fit(X_boot, y_boot)
+        return model
     
     def _prepare_data(
         self,
@@ -529,6 +632,7 @@ class SHAPStability:
                     self.explainer_kwargs,
                     shap_subsample=self.shap_subsample,
                     random_state=seed + 20000,
+                    categorical_feature_indices=self.categorical_feature_indices if self.support_categorical else None,
                 )
                 shap_values_list.append(shap_vals)
             except Exception as e:
@@ -602,18 +706,45 @@ class SHAPStability:
         
         # Train reference model (for Option A or as reference for metrics)
         self._print("Training reference model on full data...")
-        reference_model = self.model_factory()
-        reference_model.fit(X_train, y_train)
+        try:
+            reference_model = self.model_factory()
+            reference_model.fit(X_train, y_train)
+            self._print("Reference model trained successfully", level=1)
+        except Exception as e:
+            self._print(f"ERROR: Failed to train reference model: {e}", level=1)
+            raise
         
         # Compute reference SHAP values
-        reference_shap = _compute_shap_values(
-            reference_model,
-            X_eval if X_eval is not None else X_train,
-            self.explainer_type,
-            self.explainer_kwargs,
-            subsample=self.shap_subsample,
-            random_state=self.random_state,
-        )
+        self._print("Computing reference SHAP values...", level=1)
+        try:
+            reference_shap = _compute_shap_values(
+                reference_model,
+                X_eval if X_eval is not None else X_train,
+                self.explainer_type,
+                self.explainer_kwargs,
+                subsample=self.shap_subsample,
+                random_state=self.random_state,
+            )
+            
+            # Validate SHAP values
+            if reference_shap is None or len(reference_shap) == 0:
+                self._print("ERROR: Reference SHAP values are empty", level=1)
+                raise ValueError("Reference SHAP values are empty")
+            
+            # Check for degenerate SHAP values (all zeros or constant)
+            shap_std = np.std(reference_shap, axis=0)
+            n_constant = np.sum(shap_std < 1e-10)
+            if n_constant == n_features:
+                self._print("WARNING: All SHAP values are constant (zero variance)", level=1)
+                self._print("  This may indicate a model that doesn't use the features", level=1)
+            elif n_constant > 0:
+                self._print(f"WARNING: {n_constant}/{n_features} features have constant SHAP values", level=1)
+            
+            self._print(f"Reference SHAP computed: shape={reference_shap.shape}", level=1)
+            
+        except Exception as e:
+            self._print(f"ERROR: Failed to compute reference SHAP values: {e}", level=1)
+            raise
         
         # Initialize metric runner
         metric_runner = SHAPMetricRunner(
@@ -663,7 +794,12 @@ class SHAPStability:
                 raw_shap[int(n_pool)] = shap_values_list
         
         # Aggregate metrics across pools
+        self._print("Aggregating metrics across pools...", level=1)
         aggregated = aggregate_shap_metrics(all_pool_metrics, SHAP_METRIC_NAMES)
+        
+        # Log aggregation summary
+        n_valid_pools = sum(1 for m in all_pool_metrics if m is not None)
+        self._print(f"Valid pool metrics: {n_valid_pools}/{len(all_pool_metrics)}", level=1)
         
         # Build learning curves
         learning_curves = {}
@@ -672,22 +808,52 @@ class SHAPStability:
                 "means": aggregated[metric]["means"],
                 "stderr": aggregated[metric]["stderrs"],
             }
+            # Log learning curve summary
+            means = aggregated[metric]["means"]
+            if means and len(means) > 0:
+                self._print(f"  {metric}: mean range [{min(means):.4f}, {max(means):.4f}]", level=2)
         
         # Fit learning curves
+        self._print(f"Fitting learning curves (r2_threshold={self.r2_threshold})...", level=1)
         fitted_curves = fit_all_curves(
             valid_pools,
             learning_curves,
             self.r2_threshold,
             self.extrapolate_to,
+            estimate_alpha=self.estimate_alpha,
+            alpha_bounds=self.alpha_bounds,
+            fixed_alpha=self.fixed_alpha,
         )
+        
+        # Log fitting results
+        n_successful_fits = sum(1 for f in fitted_curves.values() if not f.get("fit_failed", True))
+        self._print(f"Successful curve fits: {n_successful_fits}/{len(SHAP_METRIC_NAMES)}", level=1)
         
         for metric in SHAP_METRIC_NAMES:
             learning_curves[metric]["fit"] = fitted_curves.get(metric, {})
         
         # Compute complexity score
-        complexity_score, per_metric_floors = self._compute_shap_complexity_score(
+        self._print("Computing SHAP complexity score from fitted curves...", level=1)
+        complexity_score, per_metric_floors, complexity_scores = self._compute_shap_complexity_score(
             fitted_curves
         )
+        
+        # Validate complexity score
+        if not np.isfinite(complexity_score):
+            self._print("", level=1)
+            self._print("=" * 60, level=1)
+            self._print("WARNING: SHAP complexity score is NaN", level=1)
+            self._print("=" * 60, level=1)
+            self._print("This may indicate:", level=1)
+            self._print("  1. Insufficient data for curve fitting (try more samples)", level=1)
+            self._print("  2. All curve fits were anomalous (check r2_threshold)", level=1)
+            self._print("  3. No valid metric weights configured", level=1)
+            self._print("  4. SHAP values are constant/zero for all features", level=1)
+            self._print(f"Per-metric floors: {per_metric_floors}", level=1)
+            self._print("=" * 60, level=1)
+            self._print("", level=1)
+        else:
+            self._print(f"SHAP complexity score computed: {complexity_score:.4f}", level=1)
         
         # Build feature results
         feature_results = self._build_feature_results(
@@ -713,6 +879,7 @@ class SHAPStability:
             "excluded_pools": excluded_pools.tolist(),
             "learning_curves": learning_curves,
             "complexity_score": float(complexity_score) if np.isfinite(complexity_score) else np.nan,
+            "complexity_scores": complexity_scores,
             "per_metric_floors": per_metric_floors,
             "feature_results": feature_results,
             "degenerate_rates": degenerate_rates,
@@ -730,28 +897,73 @@ class SHAPStability:
         
         For SHAP metrics, we want lower values for most metrics
         (except direction_consistency and rank_stability where higher is better).
+        
+        All SHAP metrics are target-dependent since they require a model trained on the target.
+        
+        Enhanced with validation and diagnostic logging for debugging NaN issues.
+        
+        Returns
+        -------
+        tuple
+            (overall_score, per_metric_floors, complexity_scores_dict)
+            - overall_score: float - Combined weighted score (backwards compatible)
+            - per_metric_floors: dict - Floor values for each metric
+            - complexity_scores_dict: dict with keys 'overall', 'target_agnostic', 'target_dependent'
+              Note: For SHAP, 'target_agnostic' will always be NaN since all SHAP metrics
+              require a model trained on the target.
         """
+        import warnings
+        
         # Flatten weights
         all_weights = {}
         for tier, weights in self.metric_weights.items():
             all_weights.update(weights)
         
+        # Diagnostic: Check if we have any fitted curves
+        if not fitted_curves:
+            self._print("WARNING: No fitted curves provided to _compute_shap_complexity_score", level=1)
+            complexity_scores = {
+                "overall": np.nan,
+                "target_agnostic": np.nan,
+                "target_dependent": np.nan,
+            }
+            return np.nan, {}, complexity_scores
+        
         total_weight = 0.0
         weighted_sum = 0.0
         per_metric_floors = {}
+        
+        # Track diagnostics
+        n_total = len(fitted_curves)
+        n_failed = 0
+        n_anomalous = 0
+        n_nan_floor = 0
+        n_zero_weight = 0
+        n_valid = 0
         
         for metric, fit in fitted_curves.items():
             floor = fit.get("floor", np.nan)
             per_metric_floors[metric] = floor
             
-            if fit.get("fit_failed") or fit.get("anomalous"):
+            # Track why metrics are excluded
+            if fit.get("fit_failed"):
+                n_failed += 1
+                self._print(f"  DEBUG: {metric} - fit failed", level=2)
+                continue
+            if fit.get("anomalous"):
+                n_anomalous += 1
+                self._print(f"  DEBUG: {metric} - anomalous (floor={floor:.4f})", level=2)
                 continue
             if not np.isfinite(floor):
+                n_nan_floor += 1
+                self._print(f"  DEBUG: {metric} - NaN floor", level=2)
                 continue
             
             # Get weight
             w = all_weights.get(metric, 0.0)
             if w == 0:
+                n_zero_weight += 1
+                self._print(f"  DEBUG: {metric} - zero weight in metric_weights", level=2)
                 continue
             
             # For metrics where higher is better (stability metrics),
@@ -761,14 +973,186 @@ class SHAPStability:
                 # Convert to instability: floor_instability = 1 - floor_stability
                 floor_instability = 1 - floor
                 weighted_sum += w * floor_instability
+                self._print(f"  DEBUG: {metric} - valid (floor={floor:.4f}, instability={floor_instability:.4f}, weight={w})", level=2)
             else:
                 # These are instability metrics (lower = more stable)
                 weighted_sum += w * floor
+                self._print(f"  DEBUG: {metric} - valid (floor={floor:.4f}, weight={w})", level=2)
             
             total_weight += w
+            n_valid += 1
         
-        score = weighted_sum / total_weight if total_weight > 0 else np.nan
-        return score, per_metric_floors
+        # Diagnostic summary
+        self._print(f"SHAP complexity score diagnostics:", level=1)
+        self._print(f"  Total metrics: {n_total}", level=1)
+        self._print(f"  Valid contributions: {n_valid}", level=1)
+        self._print(f"  Fit failures: {n_failed}", level=1)
+        self._print(f"  Anomalous fits: {n_anomalous}", level=1)
+        self._print(f"  NaN floors: {n_nan_floor}", level=1)
+        self._print(f"  Zero weight: {n_zero_weight}", level=1)
+        self._print(f"  Total weight: {total_weight:.4f}", level=1)
+        
+        # Fallback with warning if no valid fits
+        if total_weight == 0:
+            warnings.warn(
+                "No valid curve fits found for SHAP complexity score. "
+                f"Diagnostics: total={n_total}, failed={n_failed}, anomalous={n_anomalous}, "
+                f"nan_floor={n_nan_floor}, zero_weight={n_zero_weight}. "
+                "Consider increasing n_resamples or adjusting r2_threshold."
+            )
+            self._print("WARNING: No valid curve fits found for SHAP complexity score", level=1)
+            
+            # Fallback: try to compute a proxy from raw metric values
+            fallback_score = self._compute_fallback_complexity_score(aggregated, all_weights)
+            if np.isfinite(fallback_score):
+                self._print(f"  Using fallback complexity score: {fallback_score:.4f}", level=1)
+                complexity_scores = {
+                    "overall": float(fallback_score),
+                    "target_agnostic": np.nan,  # SHAP metrics are all target-dependent
+                    "target_dependent": float(fallback_score),
+                }
+                return fallback_score, per_metric_floors, complexity_scores
+            else:
+                complexity_scores = {
+                    "overall": np.nan,
+                    "target_agnostic": np.nan,
+                    "target_dependent": np.nan,
+                }
+                return np.nan, per_metric_floors, complexity_scores
+        
+        score = weighted_sum / total_weight
+        self._print(f"  Final complexity score: {score:.4f}", level=1)
+        
+        # Build complexity_scores dict
+        # Note: All SHAP metrics are target-dependent, so target_agnostic is always NaN
+        complexity_scores = {
+            "overall": float(score) if np.isfinite(score) else np.nan,
+            "target_agnostic": np.nan,  # SHAP metrics require a model trained on target
+            "target_dependent": float(score) if np.isfinite(score) else np.nan,
+        }
+        
+        return score, per_metric_floors, complexity_scores
+    
+    def _compute_fallback_complexity_score(
+        self,
+        aggregated_metrics: dict,
+        all_weights: dict,
+    ) -> float:
+        """
+        Compute a fallback complexity score when curve fitting fails.
+        
+        Uses the raw metric values at the largest pool size as a proxy
+        for the floor parameter.
+        
+        Parameters
+        ----------
+        aggregated_metrics : dict
+            Aggregated metrics from aggregate_shap_metrics().
+        all_weights : dict
+            Flattened metric weights.
+        
+        Returns
+        -------
+        float
+            Fallback complexity score, or NaN if not computable.
+        """
+        # Get the last (largest pool) values
+        weighted_sum = 0.0
+        total_weight = 0.0
+        
+        for metric, weight in all_weights.items():
+            if weight == 0:
+                continue
+            if metric not in aggregated_metrics:
+                continue
+            
+            means = aggregated_metrics[metric].get("means", [])
+            if not means:
+                continue
+            
+            # Use the last value (largest pool)
+            last_value = means[-1]
+            if not np.isfinite(last_value):
+                continue
+            
+            # Handle stability vs instability metrics
+            if metric in ["rank_stability", "rank_stability_global", "direction_consistency", "topk_overlap"]:
+                # Stability metric: convert to instability
+                instability = 1 - last_value
+                weighted_sum += weight * instability
+            else:
+                # Instability metric: use directly
+                weighted_sum += weight * last_value
+            
+            total_weight += weight
+            self._print(f"  Fallback: {metric} = {last_value:.4f} (weight={weight})", level=2)
+        
+        if total_weight > 0:
+            return weighted_sum / total_weight
+        else:
+            return np.nan
+    
+    def _get_fallback_complexity_score(self, aggregated_metrics: dict) -> float:
+        """
+        Compute a fallback complexity score when curve fitting fails.
+        
+        Uses the raw metric values at the largest pool size as a proxy.
+        
+        Parameters
+        ----------
+        aggregated_metrics : dict
+            Aggregated metrics from aggregate_shap_metrics().
+        
+        Returns
+        -------
+        float
+            Fallback complexity score, or NaN if not computable.
+        """
+        self._print("Attempting fallback complexity score computation...", level=1)
+        
+        # Flatten weights
+        all_weights = {}
+        for tier, weights in self.metric_weights.items():
+            all_weights.update(weights)
+        
+        # Get the last (largest pool) values
+        total_weight = 0.0
+        weighted_sum = 0.0
+        
+        for metric, weight in all_weights.items():
+            if weight == 0:
+                continue
+            if metric not in aggregated_metrics:
+                continue
+            
+            means = aggregated_metrics[metric].get("means", [])
+            if not means:
+                continue
+            
+            # Use the last value (largest pool)
+            last_value = means[-1]
+            if not np.isfinite(last_value):
+                continue
+            
+            # Handle stability vs instability metrics
+            if metric in ["rank_stability", "rank_stability_global", "direction_consistency", "topk_overlap"]:
+                # Stability metric: convert to instability
+                instability = 1 - last_value
+                weighted_sum += weight * instability
+            else:
+                # Instability metric: use directly
+                weighted_sum += weight * last_value
+            
+            total_weight += weight
+            self._print(f"  Fallback: {metric} = {last_value:.4f} (weight={weight})", level=2)
+        
+        if total_weight > 0:
+            fallback_score = weighted_sum / total_weight
+            self._print(f"  Fallback complexity score: {fallback_score:.4f}", level=1)
+            return fallback_score
+        else:
+            self._print("  Fallback failed: no valid metrics", level=1)
+            return np.nan
     
     def _build_feature_results(
         self,
@@ -835,11 +1219,17 @@ class SHAPStability:
         """
         results = self.fit(X, y, feature_names)
         
-        # Build summary DataFrame
+        # Get the overall complexity score from fit results
+        overall_complexity = results.get("complexity_score", np.nan)
+        
+        # Build summary DataFrame with complexity_score column
         summary_rows = []
         for feat_result in results["feature_results"]:
             row = {
                 "feature": feat_result["feature"],
+                # Include the overall complexity score for each feature
+                # (SHAP complexity is computed globally, not per-feature)
+                "complexity_score": overall_complexity,
                 "direction_consistency": feat_result.get("direction_consistency_mean", np.nan),
                 "rank_stability": feat_result.get("rank_stability_mean", np.nan),
                 "wasserstein": feat_result.get("wasserstein_mean", np.nan),
@@ -854,6 +1244,12 @@ class SHAPStability:
             summary_df = summary_df.sort_values(
                 "direction_consistency", ascending=False
             ).reset_index(drop=True)
+        
+        # Log summary statistics
+        if not np.isnan(overall_complexity):
+            self._print(f"fit_panel() returning complexity_score: {overall_complexity:.4f}", level=1)
+        else:
+            self._print("WARNING: fit_panel() returning NaN complexity_score", level=1)
         
         return {
             "feature_results": results["feature_results"],
