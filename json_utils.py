@@ -127,8 +127,8 @@ def generate_stability_results(output_dir: Optional[Path] = None) -> Dict[str, D
         results[feature] = {
             "complexity_score": convert_numeric(row.get('complexity_score')),
             "complexity_rank": convert_numeric(row.get('complexity_rank')),
-            "oot_complexity_score": convert_numeric(row.get('oot_complexity_score')),
-            "oot_complexity_shift": convert_numeric(row.get('oot_complexity_shift')),
+            "holdout_complexity_score": convert_numeric(row.get('holdout_complexity_score')),
+            "holdout_complexity_shift": convert_numeric(row.get('holdout_complexity_shift')),
             "lgbm_gain_norm": convert_numeric(row.get('lgbm_gain_norm')),
             "lgbm_gain_rank": convert_numeric(row.get('lgbm_gain_rank')),
             "tree_coverage": convert_numeric(row.get('tree_coverage')),
@@ -273,8 +273,8 @@ def generate_meta_bootstrap_results(output_dir: Optional[Path] = None) -> Dict[s
             continue
         
         complexity = convert_numeric(row.get('complexity_score'))
-        oot_complexity = convert_numeric(row.get('oot_complexity_score'))
-        oot_shift = convert_numeric(row.get('oot_complexity_shift'))
+        holdout_complexity = convert_numeric(row.get('holdout_complexity_score'))
+        holdout_shift = convert_numeric(row.get('holdout_complexity_shift'))
         
         # Use cross_seed_std as a proxy for confidence interval width
         cross_seed_std = convert_numeric(row.get('cross_seed_std_rank'))
@@ -292,9 +292,9 @@ def generate_meta_bootstrap_results(output_dir: Optional[Path] = None) -> Dict[s
             "std_complexity": cross_seed_std,
             "ci_lower": ci_lower,
             "ci_upper": ci_upper,
-            "oot_complexity": oot_complexity,
-            "oot_shift": oot_shift,
-            "shift_flag": abs(oot_shift) > 50 if oot_shift else False,
+            "holdout_complexity": holdout_complexity,
+            "holdout_shift": holdout_shift,
+            "shift_flag": abs(holdout_shift) > 50 if holdout_shift else False,
         }
     
     return results
@@ -354,7 +354,7 @@ Analysis performed on the Default of Credit Card Clients dataset (30,000 samples
     
     stable = [c for c in comparison if c.get('classification') == 'STABLE']
     false_alarms = [c for c in comparison if c.get('classification') == 'FALSE_ALARM']
-    oot_drift = [c for c in comparison if c.get('classification') == 'OOT_DRIFT']
+    holdout_drift = [c for c in comparison if c.get('classification') == 'HOLDOUT_DRIFT']
     
     report += f"""
 ## Classification Summary
@@ -363,7 +363,7 @@ Analysis performed on the Default of Credit Card Clients dataset (30,000 samples
 |---------------|-------|
 | STABLE | {len(stable)} |
 | FALSE_ALARM | {len(false_alarms)} |
-| OOT_DRIFT | {len(oot_drift)} |
+| HOLDOUT_DRIFT | {len(holdout_drift)} |
 
 """
     
@@ -372,9 +372,9 @@ Analysis performed on the Default of Credit Card Clients dataset (30,000 samples
         for fa in false_alarms:
             report += f"- {fa['feature']}: marginal={fa.get('marginal_complexity', 'N/A')}, shap={fa.get('shap_complexity', 'N/A')}\n"
     
-    if oot_drift:
-        report += "\n### OOT Drift Features\n"
-        for od in oot_drift:
+    if holdout_drift:
+        report += "\n### Holdout Drift Features\n"
+        for od in holdout_drift:
             report += f"- {od['feature']}: drift_score={od.get('drift_score', 'N/A')}\n"
     
     report += """
@@ -415,7 +415,7 @@ Features with moderate complexity:
 Features with OOT drift or high complexity:
 """
     
-    for od in oot_drift[:5]:
+    for od in holdout_drift[:5]:
         report += f"- {od['feature']} (OOT drift)\n"
     
     return report
@@ -537,8 +537,8 @@ def generate_stability_results_full(output_dir: Optional[str] = None) -> Dict[st
         stability_results["features"][feature] = {
             "complexity_score": float(row['complexity_score']) if pd.notna(row['complexity_score']) else None,
             "complexity_rank": int(row['complexity_rank']) if pd.notna(row['complexity_rank']) else None,
-            "oot_complexity_score": float(row['oot_complexity_score']) if pd.notna(row['oot_complexity_score']) else None,
-            "oot_complexity_shift": float(row['oot_complexity_shift']) if pd.notna(row['oot_complexity_shift']) else None,
+            "holdout_complexity_score": float(row['holdout_complexity_score']) if pd.notna(row['holdout_complexity_score']) else None,
+            "holdout_complexity_shift": float(row['holdout_complexity_shift']) if pd.notna(row['holdout_complexity_shift']) else None,
             "tree_coverage": float(row['tree_coverage']) if pd.notna(row['tree_coverage']) else None,
             "mean_depth": float(row['mean_depth']) if pd.notna(row['mean_depth']) else None,
             "stability_interpretation": "stable" if pd.notna(row['complexity_score']) and row['complexity_score'] < 50 else "unstable"
@@ -600,7 +600,7 @@ def generate_shap_stability_results_full(output_dir: Optional[str] = None) -> Di
             if feature in shap_stability_results["features"]:
                 shap_stability_results["features"][feature].update({
                     "shap_complexity": float(row['shap_complexity']) if pd.notna(row['shap_complexity']) else None,
-                    "oot_drift_score": float(row['oot_drift_score']) if pd.notna(row['oot_drift_score']) else None,
+                    "holdout_drift_score": float(row['holdout_drift_score']) if pd.notna(row['holdout_drift_score']) else None,
                     "direction_consistent": bool(row['direction_consistent']) if pd.notna(row['direction_consistent']) else None,
                     "classification": row['classification'] if pd.notna(row['classification']) else None
                 })
@@ -648,6 +648,7 @@ def generate_reliability_results_full(output_dir: Optional[str] = None) -> Dict[
     }
     
     # Calculate reliability scores using the documented ReliabilityScorer
+    # cross_seed_std_rank: std dev of feature rank across seeds (rank-position units, range ≈ 0–8)
     if RELIABILITY_SCORER_AVAILABLE:
         scorer = ReliabilityScorer(ReliabilityConfig(
             complexity_min=0.0,
@@ -655,25 +656,28 @@ def generate_reliability_results_full(output_dir: Optional[str] = None) -> Dict[
             importance_min=0.0,
             importance_max=1.0,
             cross_seed_std_min=0.0,
-            cross_seed_std_max=3.0,
+            cross_seed_std_max=5.0,
         ))
         use_scorer = True
     else:
         use_scorer = False
-    
+
     for _, row in master_df.iterrows():
         feature = row['feature']
-        
+
         complexity = float(row['complexity_score']) if pd.notna(row['complexity_score']) else float('nan')
         importance = float(row['shap_importance_norm']) if pd.notna(row['shap_importance_norm']) else float('nan')
-        cross_seed_std = float(row['shap_cv']) if pd.notna(row['shap_cv']) else float('nan')
-        
+        # cross_seed_std_rank: std dev of rank across seeds (rank units, not shap_cv)
+        cross_seed_std = float(row['cross_seed_std_rank']) if pd.notna(row['cross_seed_std_rank']) else float('nan')
+        # tree_coverage: fraction of trees using the feature (already in [0, 1])
+        coverage = float(row['tree_coverage']) if pd.notna(row['tree_coverage']) else float('nan')
+
         if use_scorer:
             result = scorer.compute(
                 feature_name=feature,
                 complexity_score=complexity,
                 importance_score=importance,
-                coverage_ratio=0.5,  # Not available from CSV; neutral value
+                coverage_ratio=coverage,
                 cross_seed_std=cross_seed_std,
             )
             reliability = result.reliability_score
@@ -771,8 +775,8 @@ def generate_meta_bootstrap_results_full(output_dir: Optional[str] = None) -> Di
                 "computed": False,
                 "note": "Run MetaBootstrap.fit() to compute real confidence intervals"
             },
-            "oot_complexity_score": float(row['oot_complexity_score']) if pd.notna(row['oot_complexity_score']) else None,
-            "oot_complexity_shift": float(row['oot_complexity_shift']) if pd.notna(row['oot_complexity_shift']) else None,
+            "holdout_complexity_score": float(row['holdout_complexity_score']) if pd.notna(row['holdout_complexity_score']) else None,
+            "holdout_complexity_shift": float(row['holdout_complexity_shift']) if pd.notna(row['holdout_complexity_shift']) else None,
             "stability_category": "stable" if complexity is not None and complexity < 50 else "unstable"
         }
     
@@ -812,7 +816,7 @@ def generate_summary_report_full(output_dir: Optional[str] = None) -> str:
     feature_reliability.sort(key=lambda x: x[1], reverse=True)
     
     # Get classification counts
-    classification_counts = {"STABLE": 0, "CONFIRMED_UNSTABLE": 0, "FALSE_ALARM": 0, "MISSED_RISK": 0, "OOT_DRIFT": 0}
+    classification_counts = {"STABLE": 0, "CONFIRMED_UNSTABLE": 0, "FALSE_ALARM": 0, "MISSED_RISK": 0, "HOLDOUT_DRIFT": 0}
     if comparison_df is not None:
         for cls in classification_counts:
             classification_counts[cls] = int((comparison_df['classification'] == cls).sum())
@@ -836,7 +840,7 @@ def generate_summary_report_full(output_dir: Optional[str] = None) -> str:
         "### Key Findings",
         "",
         f"- **{classification_counts['STABLE']}** features are stable and reliable for production use",
-        f"- **{classification_counts['OOT_DRIFT']}** features show drift between training and OOT periods",
+        f"- **{classification_counts['HOLDOUT_DRIFT']}** features show drift between training and holdout sets",
         f"- **{classification_counts['FALSE_ALARM']}** features were false alarms (marginally unstable but SHAP-stable)",
         f"- **{classification_counts['CONFIRMED_UNSTABLE']}** features are confirmed unstable",
         "",
@@ -863,16 +867,16 @@ def generate_summary_report_full(output_dir: Optional[str] = None) -> str:
         f"| CONFIRMED_UNSTABLE | {classification_counts['CONFIRMED_UNSTABLE']} | Unstable in both marginal and SHAP analysis |",
         f"| FALSE_ALARM | {classification_counts['FALSE_ALARM']} | Marginal instability but stable SHAP contributions |",
         f"| MISSED_RISK | {classification_counts['MISSED_RISK']} | Stable marginal but unstable SHAP contributions |",
-        f"| OOT_DRIFT | {classification_counts['OOT_DRIFT']} | Different behavior in out-of-time test period |",
+        f"| HOLDOUT_DRIFT | {classification_counts['HOLDOUT_DRIFT']} | Different behavior in holdout set |",
         "",
         "---",
         "",
-        "## OOT Drift Features",
+        "## Holdout Drift Features",
         "",
     ])
     
     if comparison_df is not None:
-        drift_features = comparison_df[comparison_df['classification'] == 'OOT_DRIFT'].sort_values('oot_drift_score', ascending=False)
+        drift_features = comparison_df[comparison_df['classification'] == 'HOLDOUT_DRIFT'].sort_values('holdout_drift_score', ascending=False)
         if len(drift_features) > 0:
             report_lines.extend([
                 "| Feature | Drift Score | Direction Consistent |",
@@ -880,7 +884,7 @@ def generate_summary_report_full(output_dir: Optional[str] = None) -> str:
             ])
             for _, row in drift_features.iterrows():
                 dir_consistent = "✓" if row['direction_consistent'] else "✗"
-                report_lines.append(f"| `{row['feature']}` | {row['oot_drift_score']:.3f} | {dir_consistent} |")
+                report_lines.append(f"| `{row['feature']}` | {row['holdout_drift_score']:.3f} | {dir_consistent} |")
         else:
             report_lines.append("No features with significant OOT drift detected.")
     
@@ -917,9 +921,9 @@ def generate_summary_report_full(output_dir: Optional[str] = None) -> str:
         "",
     ])
     
-    if classification_counts['OOT_DRIFT'] > 0:
+    if classification_counts['HOLDOUT_DRIFT'] > 0:
         report_lines.extend([
-            f"1. **Monitor OOT Drift Features:** {classification_counts['OOT_DRIFT']} features show different behavior ",
+            f"1. **Monitor Holdout Drift Features:** {classification_counts['HOLDOUT_DRIFT']} features show different behavior ",
             "in the test period. Consider monitoring these closely in production.",
             "",
         ])

@@ -1223,14 +1223,36 @@ class SHAPStability:
         # Get the overall complexity score from fit results
         overall_complexity = results.get("complexity_score", np.nan)
         
-        # Build summary DataFrame with complexity_score column
+        # Flatten metric weights for per-feature complexity computation
+        all_weights = {
+            metric: w
+            for tier_weights in self.metric_weights.values()
+            for metric, w in tier_weights.items()
+        }
+        stability_metrics = {"rank_stability", "direction_consistency", "topk_overlap", "rank_stability_global"}
+
+        # Build summary DataFrame with per-feature complexity scores
         summary_rows = []
         for feat_result in results["feature_results"]:
+            # Compute a per-feature complexity proxy from per-feature stability means.
+            # Uses the same weighting scheme as _compute_shap_complexity_score but
+            # substitutes per-feature metric means for learning-curve floor parameters.
+            total_w = 0.0
+            weighted_instab = 0.0
+            for metric, weight in all_weights.items():
+                if weight == 0:
+                    continue
+                val = feat_result.get(f"{metric}_mean", np.nan)
+                if not np.isfinite(val):
+                    continue
+                instab = (1.0 - val) if metric in stability_metrics else val
+                weighted_instab += weight * instab
+                total_w += weight
+            feat_complexity = weighted_instab / total_w if total_w > 0 else overall_complexity
+
             row = {
                 "feature": feat_result["feature"],
-                # Include the overall complexity score for each feature
-                # (SHAP complexity is computed globally, not per-feature)
-                "complexity_score": overall_complexity,
+                "complexity_score": feat_complexity,
                 "direction_consistency": feat_result.get("direction_consistency_mean", np.nan),
                 "rank_stability": feat_result.get("rank_stability_mean", np.nan),
                 "wasserstein": feat_result.get("wasserstein_mean", np.nan),

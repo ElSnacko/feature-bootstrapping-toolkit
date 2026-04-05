@@ -77,9 +77,12 @@ except ImportError:
 
 try:
     from bootstrap_stability import BootstrapStability
+    from bootstrap_stability.reliability import ReliabilityScorer, ReliabilityConfig
 except ImportError:
     print("WARNING: bootstrap_stability not available. Section 13 will be skipped.")
     BootstrapStability = None
+    ReliabilityScorer = None
+    ReliabilityConfig = None
 
 try:
     from bootstrap_stability import (
@@ -974,46 +977,34 @@ def section16_reliability_scoring(master):
     """Create composite reliability score for each feature."""
     df = master.copy()
 
-    def normalize_to_01(series):
-        """Min-max normalize a series to [0, 1]."""
-        mn, mx = series.min(), series.max()
-        if mx - mn == 0:
-            return pd.Series(0.5, index=series.index)
-        return (series - mn) / (mx - mn)
+    # Use ReliabilityScorer with fixed absolute bounds so scores are consistent
+    # with reliability_results.json produced by generate_json_outputs.py.
+    # complexity_score (marginal bootstrap) is clamped at [0, 100]; negative
+    # values (clean convergence) map to stability=1.0 and values >100 to 0.0.
+    # cross_seed_std_rank units are rank positions; 5.0 is the high-instability ceiling.
+    scorer = ReliabilityScorer(ReliabilityConfig(
+        complexity_min=0.0,
+        complexity_max=100.0,
+        importance_min=0.0,
+        importance_max=1.0,
+        cross_seed_std_min=0.0,
+        cross_seed_std_max=5.0,
+    )) if ReliabilityScorer is not None else None
 
-    # Component 1: Importance (high SHAP rank = low number = high importance)
-    # Invert rank so higher = more important
-    importance = normalize_to_01(df["shap_rank"].max() - df["shap_rank"] + 1)
-
-    # Component 2: Stability (low CV, low cross-seed std, low complexity score)
-    cv_inv = normalize_to_01(df["shap_cv"].max() - df["shap_cv"])  # invert
-    seed_std_inv = normalize_to_01(
-        df["cross_seed_std_rank"].max() - df["cross_seed_std_rank"]
-    )  # invert
-    complexity_inv = normalize_to_01(
-        df["complexity_score"].max() - df["complexity_score"]
-    ) if df["complexity_score"].notna().any() else pd.Series(0.5, index=df.index)
-    stability = (cv_inv + seed_std_inv + complexity_inv) / 3.0
-
-    # Component 3: Coverage
-    coverage = normalize_to_01(df["tree_coverage"])
-
-    # Component 4: Consistency (tight permutation CI = low std relative to mean)
-    perm_cv = df["perm_importance_std"] / df["perm_importance_mean"].replace(0, np.nan)
-    consistency = normalize_to_01(perm_cv.max() - perm_cv)  # invert
-
-    # Weighted average
-    w_imp = 0.3
-    w_stab = 0.4
-    w_cov = 0.15
-    w_con = 0.15
-
-    df["reliability_score"] = (
-        w_imp * importance +
-        w_stab * stability +
-        w_cov * coverage +
-        w_con * consistency
-    )
+    reliability_scores = []
+    for _, row in df.iterrows():
+        if scorer is None:
+            reliability_scores.append(np.nan)
+            continue
+        result = scorer.compute(
+            feature_name=row["feature"],
+            complexity_score=float(row["complexity_score"]) if pd.notna(row["complexity_score"]) else float("nan"),
+            importance_score=float(row["shap_importance_norm"]) if pd.notna(row["shap_importance_norm"]) else float("nan"),
+            coverage_ratio=float(row["tree_coverage"]) if pd.notna(row["tree_coverage"]) else float("nan"),
+            cross_seed_std=float(row["cross_seed_std_rank"]) if pd.notna(row["cross_seed_std_rank"]) else float("nan"),
+        )
+        reliability_scores.append(result.reliability_score)
+    df["reliability_score"] = reliability_scores
 
     df = df.sort_values("reliability_score", ascending=False).reset_index(drop=True)
 
