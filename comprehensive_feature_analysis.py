@@ -1068,7 +1068,7 @@ def section17_key_findings(master, df_reliability, entropy_info, df_dist, df_int
     # Top 5 most important but unreliable
     print("\n► Top 5 Most Important but Unreliable Features (high SHAP, low reliability):")
     df_reliability_sorted = df_reliability.sort_values("shap_rank").reset_index(drop=True)
-    low_reliability = df_reliability_sorted.nlargest(20, "shap_rank")
+    low_reliability = df_reliability_sorted.nsmallest(20, "shap_rank")
     important_unreliable = low_reliability.nsmallest(5, "reliability_score")
     for i, (_, row) in enumerate(important_unreliable.iterrows()):
         print(f"  {i + 1}. {row['feature']}: SHAP rank={row['shap_rank']:.0f}, "
