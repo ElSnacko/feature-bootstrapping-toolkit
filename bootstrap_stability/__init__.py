@@ -43,13 +43,13 @@ from .shap_metrics import (
     compute_topk_overlap,
     aggregate_shap_metrics,
 )
-from .train_oot import (
-    TrainOOTStability,
-    print_oot_report,
+from .train_holdout import (
+    TrainHoldoutStability,
+    print_holdout_report,
     compute_shap_rank_correlation,
     compute_direction_flip_rate,
     compute_magnitude_drift,
-    compute_topk_overlap as compute_oot_topk_overlap,
+    compute_topk_overlap as compute_holdout_topk_overlap,
     compute_per_feature_drift,
     compute_overall_drift_score,
     get_drift_grade,
@@ -99,10 +99,10 @@ __all__ = [
     "compute_direction_consistency", "compute_magnitude_cv", "compute_magnitude_iqr",
     "compute_topk_overlap", "aggregate_shap_metrics",
     
-    # Train/OOT Stability
-    "TrainOOTStability", "print_oot_report",
+    # Train/holdout Stability
+    "TrainHoldoutStability", "print_holdout_report",
     "compute_shap_rank_correlation", "compute_direction_flip_rate",
-    "compute_magnitude_drift", "compute_oot_topk_overlap",
+    "compute_magnitude_drift", "compute_holdout_topk_overlap",
     "compute_per_feature_drift", "compute_overall_drift_score", "get_drift_grade",
     
     # Reliability Scoring

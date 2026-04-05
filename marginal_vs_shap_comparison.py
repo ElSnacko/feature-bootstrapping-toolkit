@@ -2,7 +2,7 @@
 Marginal vs SHAP Stability Comparison Demo
 
 This script demonstrates the key insight from the critique:
-"train stability in marginal space has no reason to predict OOT stability
+"train stability in marginal space has no reason to predict holdout stability
 in the space where the model actually makes decisions"
 
 The script compares:
@@ -40,7 +40,7 @@ except ImportError:
 from bootstrap_stability import (
     BootstrapStability,
     SHAPStability,
-    TrainOOTStability,
+    TrainHoldoutStability,
     print_report,
 )
 
@@ -65,24 +65,24 @@ def load_credit_card_data(filepath: str) -> pd.DataFrame:
 
 def create_temporal_split(df: pd.DataFrame, train_frac: float = 0.8):
     """
-    Create a temporal train/OOT split.
+    Create a temporal train/holdout split.
     
     Since the credit card data doesn't have explicit time ordering,
     we simulate temporal drift by:
     1. Using the first 80% as "train" (older period)
-    2. Using the last 20% as "OOT" (newer period)
+    2. Using the last 20% as "holdout" (newer period)
     """
     n = len(df)
     train_end = int(n * train_frac)
     
     train_df = df.iloc[:train_end].copy()
-    oot_df = df.iloc[train_end:].copy()
+    holdout_df = df.iloc[train_end:].copy()
     
     print(f"\nTemporal Split:")
     print(f"  Train: {len(train_df)} samples (indices 0-{train_end-1})")
-    print(f"  OOT:   {len(oot_df)} samples (indices {train_end}-{n-1})")
+    print(f"  holdout:   {len(holdout_df)} samples (indices {train_end}-{n-1})")
     
-    return train_df, oot_df
+    return train_df, holdout_df
 
 
 def get_feature_columns(df: pd.DataFrame) -> list:
@@ -154,14 +154,14 @@ def create_model_factory():
 
 def run_shap_stability_analysis(
     train_df: pd.DataFrame, 
-    oot_df: pd.DataFrame,
+    holdout_df: pd.DataFrame,
     feature_cols: list
 ) -> dict:
     """
     Run SHAP-based stability analysis using the new module.
     
     This measures how stable the feature CONTRIBUTIONS to the model are
-    between train and OOT periods - directly measuring what matters for
+    between train and holdout sets - directly measuring what matters for
     production model behavior.
     """
     print("\n" + "="*60)
@@ -171,11 +171,11 @@ def run_shap_stability_analysis(
     
     X_train = train_df[feature_cols].values
     y_train = train_df['default'].values
-    X_oot = oot_df[feature_cols].values
-    y_oot = oot_df['default'].values
+    X_holdout = holdout_df[feature_cols].values
+    y_holdout = holdout_df['default'].values
     
-    # Run Train/OOT SHAP stability analysis
-    oot_stability = TrainOOTStability(
+    # Run Train/holdout SHAP stability analysis
+    holdout_stability = TrainHoldoutStability(
         model_factory=create_model_factory(),
         explainer_type='tree',
         shap_subsample=1000,  # Subsample for speed
@@ -184,8 +184,8 @@ def run_shap_stability_analysis(
         verbose=1,
     )
     
-    results = oot_stability.fit(
-        X_train, y_train, X_oot, y_oot,
+    results = holdout_stability.fit(
+        X_train, y_train, X_holdout, y_holdout,
         feature_names=feature_cols
     )
     
@@ -441,7 +441,7 @@ This demo validates the critique that marginal distribution stability
 does not necessarily predict model contribution stability.
 
 The key insight:
-> "train stability in marginal space has no reason to predict OOT stability
+> "train stability in marginal space has no reason to predict holdout stability
 > in the space where the model actually makes decisions"
 """)
     
@@ -455,7 +455,7 @@ The key insight:
     df = load_credit_card_data(data_path)
     
     # Create temporal split
-    train_df, oot_df = create_temporal_split(df, train_frac=0.8)
+    train_df, holdout_df = create_temporal_split(df, train_frac=0.8)
     
     # Get feature columns
     feature_cols = get_feature_columns(df)
@@ -464,8 +464,8 @@ The key insight:
     # Run marginal stability analysis (on train data)
     marginal_results = run_marginal_stability_analysis(train_df, feature_cols)
     
-    # Run SHAP stability analysis (train vs OOT)
-    shap_results = run_shap_stability_analysis(train_df, oot_df, feature_cols)
+    # Run SHAP stability analysis (train vs holdout)
+    shap_results = run_shap_stability_analysis(train_df, holdout_df, feature_cols)
     
     # Compare results
     comparison_df = compare_stability_metrics(marginal_results, shap_results, feature_cols)

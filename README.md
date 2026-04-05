@@ -51,7 +51,7 @@ This is a diagnostic tool, not a pass/fail gate.
 - **Target-Agnostic/Dependent Separation**: Clear separation for credible positioning
 - **Synthetic Validation**: Four instability types with detection rate metrics
 - **Reliability Scoring**: Weighted combination of stability, importance, coverage, consistency
-- **Train vs OOT Drift Detection**: Grade-based drift assessment (A-F scale)
+- **Train vs Holdout Drift Detection**: Grade-based drift assessment (A-F scale)
 
 ---
 
@@ -459,13 +459,13 @@ SHAP (SHapley Additive exPlanations) values measure how much each feature contri
 **When to use SHAP stability:**
 - Before production deployment to validate feature behavior
 - When features have complex interactions or non-linear relationships
-- For train vs OOT drift detection
+- For train vs holdout drift detection
 - When marginal stability gives unexpected results
 
 ### Quick Example
 
 ```python
-from bootstrap_stability import SHAPStability, TrainOOTStability, print_oot_report
+from bootstrap_stability import SHAPStability, TrainHoldoutStability, print_holdout_report
 
 # Define model factory
 def lgbm_factory():
@@ -476,10 +476,10 @@ def lgbm_factory():
 shap_stability = SHAPStability(model_factory=lgbm_factory)
 results = shap_stability.fit(X_train, y_train, pool_sizes, n_resamples=25)
 
-# Train vs OOT comparison for production monitoring
-oot_checker = TrainOOTStability(model_factory=lgbm_factory)
-drift_results = oot_checker.compare(X_train, y_train, X_oot, y_oot)
-print_oot_report(drift_results)
+# Train vs holdout comparison for production monitoring
+holdout_checker = TrainHoldoutStability(model_factory=lgbm_factory)
+drift_results = holdout_checker.compare(X_train, y_train, X_holdout, y_holdout)
+print_holdout_report(drift_results)
 ```
 
 ### SHAP Stability Metrics
@@ -492,15 +492,15 @@ print_oot_report(drift_results)
 | Magnitude CV | Coefficient of variation of \|SHAP\| | `< 0.10` = stable magnitude |
 | Top-k Overlap | Jaccard overlap of top-k features | `> 0.7` = stable top features |
 
-### Train vs OOT Drift Detection
+### Train vs Holdout Drift Detection
 
-The `TrainOOTStability` class compares SHAP patterns between training and out-of-time periods:
+The `TrainHoldoutStability` class compares SHAP patterns between training and holdout sets:
 
 ```python
-from bootstrap_stability import TrainOOTStability, print_oot_report
+from bootstrap_stability import TrainHoldoutStability, print_holdout_report
 
-oot_checker = TrainOOTStability(model_factory=lgbm_factory)
-drift_results = oot_checker.compare(X_train, y_train, X_oot, y_oot)
+holdout_checker = TrainHoldoutStability(model_factory=lgbm_factory)
+drift_results = holdout_checker.compare(X_train, y_train, X_holdout, y_holdout)
 
 # Access drift metrics
 print(f"Rank correlation: {drift_results['drift_metrics']['rank_correlation']:.3f}")
@@ -563,12 +563,12 @@ to_csv(results, "dti_stability.csv")
 Useful when you want to check whether a feature's distribution is stable across time periods or population segments, independent of any outcome.
 
 ```python
-# Does this feature look the same in OOT as in development?
-oot_results = bs.fit(oot_df, "bureau_score")
+# Does this feature look the same in holdout as in development?
+holdout_results = bs.fit(holdout_df, "bureau_score")
 dev_results = bs.fit(dev_df, "bureau_score")
 
 print(f"Dev floor:  {dev_results['per_metric_floors']['wasserstein']:.4f}")
-print(f"OOT floor:  {oot_results['per_metric_floors']['wasserstein']:.4f}")
+print(f"holdout floor:  {holdout_results['per_metric_floors']['wasserstein']:.4f}")
 ```
 
 ### Example 3 — Panel Analysis and Feature Selection
