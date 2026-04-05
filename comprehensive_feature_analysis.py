@@ -45,6 +45,7 @@ import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 import numpy as np
 import pandas as pd
 
@@ -131,6 +132,15 @@ def print_header(title):
     print("\n" + "=" * 80)
     print(f"  {title}")
     print("=" * 80)
+
+
+def _savefig(fig, filename):
+    """Save figure to OUTPUT_DIR and close it."""
+    path = os.path.join(OUTPUT_DIR, filename)
+    fig.tight_layout()
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  Saved: {path}")
 
 
 def section_timer(func):
@@ -705,11 +715,7 @@ def section13b_holdout_bootstrap_comparison(train_df, X_test_df, train_panel_res
     ax.legend(fontsize=10)
     ax.grid(True, alpha=0.3)
 
-    output_path = os.path.join(OUTPUT_DIR, "holdout_complexity_scatter.png")
-    fig.tight_layout()
-    fig.savefig(output_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"\nOOT complexity scatter saved to: {output_path}")
+    _savefig(fig, "holdout_complexity_scatter.png")
 
     # --- Visualization 2: Bar chart of top 10 features by absolute shift ---
     top_shift = comparison_df.head(10).copy()
@@ -724,49 +730,12 @@ def section13b_holdout_bootstrap_comparison(train_df, X_test_df, train_panel_res
     ax.set_title("Top 10 Features by Absolute Complexity Shift (holdout vs Train)", fontsize=13)
     ax.grid(True, alpha=0.3, axis="x")
 
-    output_path2 = os.path.join(OUTPUT_DIR, "holdout_complexity_shift.png")
-    fig.tight_layout()
-    fig.savefig(output_path2, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"holdout complexity shift bar chart saved to: {output_path2}")
+    _savefig(fig, "holdout_complexity_shift.png")
 
-    # --- Print holdout insights ---
-    n_features = len(comparison_df)
-    print("\n" + "-" * 60)
-    print("holdout BOOTSTRAP STABILITY INSIGHTS")
-    print("-" * 60)
-
-    # Features with largest stability DEGRADATION (positive shift)
-    degraded = comparison_df.nlargest(5, "holdout_complexity_shift")
-    if not degraded.empty and degraded["holdout_complexity_shift"].max() > 0:
-        print("\n► Features with Largest Stability DEGRADATION in holdout (positive shift):")
-        for _, row in degraded.iterrows():
-            if row["holdout_complexity_shift"] > 0:
-                print(f"  - {row['feature']}: shift = +{row['holdout_complexity_shift']:.4f} "
-                      f"(train={row['train_complexity_score']:.4f} → oot={row['holdout_complexity_score']:.4f})")
-
-    # Features with largest stability IMPROVEMENT (negative shift)
-    improved = comparison_df.nsmallest(5, "holdout_complexity_shift")
-    if not improved.empty and improved["holdout_complexity_shift"].min() < 0:
-        print("\n► Features with Largest Stability IMPROVEMENT in holdout (negative shift):")
-        for _, row in improved.iterrows():
-            if row["holdout_complexity_shift"] < 0:
-                print(f"  - {row['feature']}: shift = {row['holdout_complexity_shift']:.4f} "
-                      f"(train={row['train_complexity_score']:.4f} → oot={row['holdout_complexity_score']:.4f})")
-
-    # Features with consistent stability (small shift)
-    median_abs_shift = comparison_df["abs_shift"].median()
-    consistent = comparison_df[comparison_df["abs_shift"] <= median_abs_shift]
-    if not consistent.empty:
-        print(f"\n► Features with Consistent Stability (abs shift ≤ median {median_abs_shift:.4f}):")
-        for _, row in consistent.iterrows():
-            print(f"  - {row['feature']}: shift = {row['holdout_complexity_shift']:+.4f}")
-
-    print("\n► Interpretation:")
-    print("  Features with large positive shifts are MORE UNSTABLE in test/holdout data,")
-    print("  suggesting distributional drift that may degrade model performance in production.")
-    print("  Features with negative shifts are MORE STABLE in holdout, indicating robust behavior.")
-    print("  Features near zero shift show consistent stability across train and test.")
+    mean_shift = comparison_df["abs_shift"].mean()
+    n_degraded = (comparison_df["holdout_complexity_shift"] > 0).sum()
+    print(f"\n  {n_degraded}/{len(comparison_df)} features degraded in holdout "
+          f"(mean |shift|={mean_shift:.4f})")
 
     return {
         "holdout_panel_results": holdout_panel_result,
@@ -962,11 +931,7 @@ def section15_correlation_analysis(master):
     plt.colorbar(im, ax=ax, label="Spearman Correlation")
     ax.set_title("All Methods Correlation Heatmap", fontsize=14, pad=15)
 
-    output_path = os.path.join(OUTPUT_DIR, "all_methods_correlation_heatmap.png")
-    fig.tight_layout()
-    fig.savefig(output_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"\nHeatmap saved to: {output_path}")
+    _savefig(fig, "all_methods_correlation_heatmap.png")
 
 
 # =============================================================================
@@ -1032,11 +997,7 @@ def section16_reliability_scoring(master):
     ax.set_title("Feature Reliability vs SHAP Importance", fontsize=14)
     ax.grid(True, alpha=0.3)
 
-    output_path = os.path.join(OUTPUT_DIR, "reliability_vs_importance.png")
-    fig.tight_layout()
-    fig.savefig(output_path, dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    print(f"\nScatter plot saved to: {output_path}")
+    _savefig(fig, "reliability_vs_importance.png")
 
     return df
 
@@ -1092,12 +1053,6 @@ def section17_key_findings(master, df_reliability, entropy_info, df_dist, df_int
     print("\n► Features with Highest Interaction Effects:")
     for i, (_, row) in enumerate(df_inter.head(5).iterrows()):
         print(f"  {i + 1}. {row['feature']}: total interaction={row['shap_total_interaction']:.6f}")
-
-    # Overall entropy
-    print(f"\n► Overall Model Concentration:")
-    print(f"  Entropy: {entropy_info['entropy']:.4f} / {entropy_info['max_entropy']:.4f}")
-    print(f"  Normalized: {entropy_info['normalized_entropy']:.4f}")
-    print(f"  Interpretation: {entropy_info['interpretation']}")
 
     # holdout stability insights
     if holdout_comparison is not None and not holdout_comparison.get("comparison_df", pd.DataFrame()).empty:
@@ -1593,68 +1548,42 @@ def section20_marginal_vs_shap_comparison(
             return "STABLE"  # Both agree: stable
     
     comparison_df['classification'] = comparison_df.apply(classify_feature, axis=1)
-    
-    # Print summary
-    print("\n► Classification Summary:")
-    for cls in ["STABLE", "CONFIRMED_UNSTABLE", "FALSE_ALARM", "MISSED_RISK", "HOLDOUT_DRIFT"]:
-        count = (comparison_df['classification'] == cls).sum()
-        print(f"    {cls}: {count} features")
-    
-    # Detailed breakdown
+
     false_alarms = comparison_df[comparison_df['classification'] == 'FALSE_ALARM']
     missed_risks = comparison_df[comparison_df['classification'] == 'MISSED_RISK']
     confirmed_unstable = comparison_df[comparison_df['classification'] == 'CONFIRMED_UNSTABLE']
     holdout_drift = comparison_df[comparison_df['classification'] == 'HOLDOUT_DRIFT']
+
+    print("\n► Classification Summary:")
+    for cls in ["STABLE", "CONFIRMED_UNSTABLE", "FALSE_ALARM", "MISSED_RISK", "HOLDOUT_DRIFT"]:
+        count = (comparison_df['classification'] == cls).sum()
+        print(f"    {cls}: {count} features")
+
+    for label, subset, col in [
+        ("FALSE ALARMS (marginal unstable, SHAP stable)", false_alarms, "shap_complexity"),
+        ("MISSED RISKS (SHAP unstable, marginal stable) — monitor in production", missed_risks, "shap_complexity"),
+        ("CONFIRMED UNSTABLE — consider removal/engineering", confirmed_unstable, "shap_complexity"),
+        ("HOLDOUT DRIFT", holdout_drift, "holdout_drift_score"),
+    ]:
+        if len(subset):
+            print(f"\n► {label}: {len(subset)}")
+            for _, row in subset.iterrows():
+                print(f"    - {row['feature']}: {col}={row[col]:.3f}")
     
-    if len(false_alarms) > 0:
-        print(f"\n► FALSE ALARMS (Marginal unstable, SHAP stable): {len(false_alarms)}")
-        print("  These features may have complex marginal distributions but stable model contributions.")
-        for _, row in false_alarms.iterrows():
-            print(f"    - {row['feature']}: marginal={row['marginal_complexity']:.3f}, "
-                  f"shap={row['shap_complexity']:.3f}")
-    
-    if len(missed_risks) > 0:
-        print(f"\n► MISSED RISKS (SHAP unstable, Marginal stable): {len(missed_risks)}")
-        print("  These features have stable distributions but unstable model contributions.")
-        print("  ** ACTION REQUIRED: Monitor these features closely in production. **")
-        for _, row in missed_risks.iterrows():
-            print(f"    - {row['feature']}: marginal={row['marginal_complexity']:.3f}, "
-                  f"shap={row['shap_complexity']:.3f}")
-    
-    if len(confirmed_unstable) > 0:
-        print(f"\n► CONFIRMED UNSTABLE (Both methods agree): {len(confirmed_unstable)}")
-        print("  These features are unstable by both metrics.")
-        print("  ** ACTION REQUIRED: Consider feature engineering or removal. **")
-        for _, row in confirmed_unstable.iterrows():
-            print(f"    - {row['feature']}: marginal={row['marginal_complexity']:.3f}, "
-                  f"shap={row['shap_complexity']:.3f}")
-    
-    if len(holdout_drift) > 0:
-        print(f"\n► holdout DRIFT (High drift in test period): {len(holdout_drift)}")
-        print("  These features show different behavior in holdout data.")
-        for _, row in holdout_drift.iterrows():
-            print(f"    - {row['feature']}: drift_score={row['holdout_drift_score']:.3f}")
-    
-    # Visualization
+    # Shared color palette for all section-20 plots
+    CLS_COLORS = {
+        'STABLE': '#2ca02c', 'CONFIRMED_UNSTABLE': '#d62728',
+        'FALSE_ALARM': '#ff7f0e', 'MISSED_RISK': '#9467bd', 'HOLDOUT_DRIFT': '#8c564b',
+    }
+
     fig, axes = plt.subplots(2, 2, figsize=(14, 12))
-    
+
     # Plot 1: Marginal vs SHAP complexity scatter
     ax1 = axes[0, 0]
     valid_mask = comparison_df['marginal_complexity'].notna() & comparison_df['shap_complexity'].notna()
     if valid_mask.any():
         scatter_data = comparison_df[valid_mask]
-        colors = []
-        for cls in scatter_data['classification']:
-            if cls == 'STABLE':
-                colors.append('#2ca02c')
-            elif cls == 'CONFIRMED_UNSTABLE':
-                colors.append('#d62728')
-            elif cls == 'FALSE_ALARM':
-                colors.append('#ff7f0e')
-            elif cls == 'MISSED_RISK':
-                colors.append('#9467bd')
-            else:
-                colors.append('#8c564b')
+        colors = [CLS_COLORS.get(c, '#8c564b') for c in scatter_data['classification']]
         
         ax1.scatter(scatter_data['marginal_complexity'],
                    scatter_data['shap_complexity'],
@@ -1676,27 +1605,18 @@ def section20_marginal_vs_shap_comparison(
         ax1.set_title('Marginal vs SHAP Complexity', fontsize=13)
         ax1.grid(True, alpha=0.3)
         
-        # Legend
-        from matplotlib.patches import Patch
         legend_elements = [
-            Patch(facecolor='#2ca02c', label='Stable'),
-            Patch(facecolor='#d62728', label='Confirmed Unstable'),
-            Patch(facecolor='#ff7f0e', label='False Alarm'),
-            Patch(facecolor='#9467bd', label='Missed Risk'),
+            Patch(facecolor=CLS_COLORS['STABLE'],             label='Stable'),
+            Patch(facecolor=CLS_COLORS['CONFIRMED_UNSTABLE'], label='Confirmed Unstable'),
+            Patch(facecolor=CLS_COLORS['FALSE_ALARM'],        label='False Alarm'),
+            Patch(facecolor=CLS_COLORS['MISSED_RISK'],        label='Missed Risk'),
         ]
         ax1.legend(handles=legend_elements, loc='upper left', fontsize=9)
     
     # Plot 2: Classification counts
     ax2 = axes[0, 1]
     class_counts = comparison_df['classification'].value_counts()
-    colors_bar = {
-        'STABLE': '#2ca02c',
-        'CONFIRMED_UNSTABLE': '#d62728',
-        'FALSE_ALARM': '#ff7f0e',
-        'MISSED_RISK': '#9467bd',
-        'HOLDOUT_DRIFT': '#8c564b',
-    }
-    bar_colors = [colors_bar.get(c, '#7f7f7f') for c in class_counts.index]
+    bar_colors = [CLS_COLORS.get(c, '#7f7f7f') for c in class_counts.index]
     ax2.bar(class_counts.index, class_counts.values, color=bar_colors, edgecolor='black')
     ax2.set_ylabel('Number of Features', fontsize=12)
     ax2.set_title('Feature Classification Summary', fontsize=13)
@@ -1772,14 +1692,10 @@ def main():
 
     # Section 1: Data Loading & Model Training
     data = section01_load_and_train()
-    model = data["model"]
-    X_train = data["X_train"]
-    X_test = data["X_test"]
-    y_train = data["y_train"]
-    y_test = data["y_test"]
-    X_holdout = data["X_holdout"]
-    feature_names = data["feature_names"]
-    df_train = data["df_train"]
+    model, X_train, X_test, y_train, y_test = (
+        data["model"], data["X_train"], data["X_test"], data["y_train"], data["y_test"]
+    )
+    X_holdout, feature_names, df_train = data["X_holdout"], data["feature_names"], data["df_train"]
 
     # Section 2: LightGBM Feature Importance
     df_imp = section02_lgbm_importance(model, feature_names)
@@ -1848,10 +1764,6 @@ def main():
     # Section 17: Key Findings Summary
     section17_key_findings(master, df_reliability, entropy_info, df_dist, df_inter, holdout_comparison=holdout_results)
 
-    # =========================================================================
-    # NEW SHAP Stability Sections (18-20)
-    # =========================================================================
-    
     # Section 18: SHAP Stability Learning Curves
     shap_stability_results = section18_shap_stability_learning_curves(
         X_train, y_train, X_holdout, feature_names, df_bootstrap
