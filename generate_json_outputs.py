@@ -8,6 +8,8 @@ import pandas as pd
 import os
 from datetime import datetime
 
+from bootstrap_stability.reliability import ReliabilityScorer, ReliabilityConfig
+
 OUTPUT_DIR = "credit_card_analysis_results"
 
 def load_csv(filename):
@@ -128,18 +130,36 @@ def main():
         "features": {}
     }
     
-    # Calculate reliability scores (replicating the logic from comprehensive analysis)
+    # Calculate reliability scores using the documented ReliabilityScorer
+    # (4-component: importance=30%, stability=40%, coverage=15%, consistency=15%)
+    # complexity_scores here are in [0, 100] range; configure bounds accordingly.
+    # coverage is unavailable from the CSV, so we default to 0.5 (neutral).
+    scorer = ReliabilityScorer(ReliabilityConfig(
+        complexity_min=0.0,
+        complexity_max=100.0,
+        importance_min=0.0,
+        importance_max=1.0,
+        cross_seed_std_min=0.0,
+        cross_seed_std_max=3.0,
+    ))
+
     for _, row in master_df.iterrows():
         feature = row['feature']
-        
-        # Normalize metrics for reliability calculation
-        stability = 1 - (row['complexity_score'] / 100 if pd.notna(row['complexity_score']) and row['complexity_score'] < 100 else 0.5)
-        importance = row['shap_importance_norm'] if pd.notna(row['shap_importance_norm']) else 0
-        consistency = 1 - (row['shap_cv'] / 3 if pd.notna(row['shap_cv']) and row['shap_cv'] < 3 else 0.5)
-        
-        # Weighted reliability score
-        reliability = 0.4 * stability + 0.4 * importance + 0.2 * consistency
-        
+
+        complexity = float(row['complexity_score']) if pd.notna(row['complexity_score']) else float('nan')
+        importance = float(row['shap_importance_norm']) if pd.notna(row['shap_importance_norm']) else float('nan')
+        cross_seed_std = float(row['shap_cv']) if pd.notna(row['shap_cv']) else float('nan')
+
+        result = scorer.compute(
+            feature_name=feature,
+            complexity_score=complexity,
+            importance_score=importance,
+            coverage_ratio=0.5,  # Not available from CSV; neutral value
+            cross_seed_std=cross_seed_std,
+        )
+
+        reliability = result.reliability_score
+
         # Assign grade
         if reliability >= 0.8:
             grade = "A"
@@ -151,14 +171,15 @@ def main():
             grade = "D"
         else:
             grade = "F"
-        
+
         reliability_results["features"][feature] = {
             "reliability_score": round(reliability, 3),
             "grade": grade,
             "components": {
-                "stability_component": round(stability, 3),
-                "importance_component": round(importance, 3),
-                "consistency_component": round(consistency, 3)
+                "stability_component": round(result.stability_component, 3),
+                "importance_component": round(result.importance_component, 3),
+                "coverage_component": round(result.coverage_component, 3),
+                "consistency_component": round(result.consistency_component, 3),
             }
         }
     
@@ -187,21 +208,16 @@ def main():
         feature = row['feature']
         complexity = row['complexity_score'] if pd.notna(row['complexity_score']) else None
         
-        # Simulate confidence intervals based on complexity score
-        # In a real meta-bootstrap, these would be computed from multiple iterations
-        if complexity is not None:
-            ci_lower = max(0, complexity - 10)
-            ci_upper = min(100, complexity + 10)
-        else:
-            ci_lower = None
-            ci_upper = None
-        
+        # Confidence intervals require running MetaBootstrap across multiple data splits.
+        # They are not available from the pre-computed CSV; set to null here.
         meta_bootstrap_results["features"][feature] = {
             "complexity_score": float(complexity) if complexity is not None else None,
             "complexity_rank": int(row['complexity_rank']) if pd.notna(row['complexity_rank']) else None,
             "confidence_interval_95": {
-                "lower": float(ci_lower) if ci_lower is not None else None,
-                "upper": float(ci_upper) if ci_upper is not None else None
+                "lower": None,
+                "upper": None,
+                "computed": False,
+                "note": "Run MetaBootstrap.fit() to compute real confidence intervals"
             },
             "oot_complexity_score": float(row['oot_complexity_score']) if pd.notna(row['oot_complexity_score']) else None,
             "oot_complexity_shift": float(row['oot_complexity_shift']) if pd.notna(row['oot_complexity_shift']) else None,

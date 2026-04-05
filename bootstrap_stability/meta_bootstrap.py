@@ -211,7 +211,13 @@ class MetaBootstrap:
                 'repeated_random': SplitStrategy.REPEATED_RANDOM,
                 'bootstrap': SplitStrategy.BOOTSTRAP,
             }
-            self.strategy = strategy_map[strategy.lower()]
+            key = strategy.lower()
+            if key not in strategy_map:
+                raise ValueError(
+                    f"Unknown split strategy: '{strategy}'. "
+                    f"Valid options are: {list(strategy_map.keys())}"
+                )
+            self.strategy = strategy_map[key]
         else:
             self.strategy = strategy
         
@@ -384,7 +390,10 @@ class MetaBootstrap:
         
         # Get splits
         splits = self._get_splits(X)
-        self._feature_names = [feature_col] if feature_col else list(X.columns)
+        if feature_col:
+            self._feature_names = [feature_col]
+        else:
+            self._feature_names = [c for c in X.columns if c != target_col]
         
         # Determine if we're analyzing single feature or panel
         single_feature = feature_col is not None

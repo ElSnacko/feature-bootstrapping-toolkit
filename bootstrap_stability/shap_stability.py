@@ -835,7 +835,7 @@ class SHAPStability:
         # Compute complexity score
         self._print("Computing SHAP complexity score from fitted curves...", level=1)
         complexity_score, per_metric_floors, complexity_scores = self._compute_shap_complexity_score(
-            fitted_curves
+            fitted_curves, aggregated_metrics=aggregated
         )
         
         # Validate complexity score
@@ -891,6 +891,7 @@ class SHAPStability:
     def _compute_shap_complexity_score(
         self,
         fitted_curves: dict,
+        aggregated_metrics: dict = None,
     ) -> tuple:
         """
         Compute weighted average of SHAP floor parameters.
@@ -1003,7 +1004,7 @@ class SHAPStability:
             self._print("WARNING: No valid curve fits found for SHAP complexity score", level=1)
             
             # Fallback: try to compute a proxy from raw metric values
-            fallback_score = self._compute_fallback_complexity_score(aggregated, all_weights)
+            fallback_score = self._compute_fallback_complexity_score(aggregated_metrics or {}, all_weights)
             if np.isfinite(fallback_score):
                 self._print(f"  Using fallback complexity score: {fallback_score:.4f}", level=1)
                 complexity_scores = {

@@ -77,9 +77,7 @@ class BootstrapStability:
         self.categorical_cardinality_threshold = categorical_cardinality_threshold
 
     def fit(self, df: pd.DataFrame, feature_col: str, target_col: str = None) -> dict:
-        x_full = df[feature_col].dropna().values
-        y_full = df[target_col].dropna().values if target_col is not None else None
-        has_target = y_full is not None
+        has_target = target_col is not None
 
         if has_target:
             common_idx = df[[feature_col, target_col]].dropna().index
@@ -87,6 +85,7 @@ class BootstrapStability:
             y_full = df.loc[common_idx, target_col].values.astype(int)
         else:
             x_full = df[feature_col].dropna().values
+            y_full = None
 
         n_obs = len(x_full)
 
