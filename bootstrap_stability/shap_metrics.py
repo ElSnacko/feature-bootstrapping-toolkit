@@ -146,7 +146,8 @@ def compute_per_feature_rank_stability(shap_values_list: List[np.ndarray]) -> np
         # Normalize by max possible rank variance
         # Max variance occurs when ranks are uniformly distributed
         rank_variance = np.var(feature_ranks, ddof=1)
-        max_variance = np.var(np.arange(1, R + 1), ddof=1) if R > 1 else 1
+        # Max variance is over rank values 1..M (feature count), not 1..R (resample count)
+        max_variance = np.var(np.arange(1, M + 1), ddof=1) if M > 1 else 1
         # Convert to stability: low variance = high stability
         stability[f] = 1 - np.sqrt(rank_variance / max_variance) if max_variance > 0 else 1
     
@@ -320,17 +321,10 @@ def compute_direction_consistency(
     # Handle zero reference signs (can happen with exact zero SHAP)
     reference_signs = np.where(reference_signs == 0, 1, reference_signs)
     
-    # Compute consistency per (sample, feature, resample)
-    consistency = np.zeros((n_samples, M))
-    for s in range(n_samples):
-        for f in range(M):
-            ref_sign = reference_signs[s, f]
-            signs_match = 0
-            for r in range(R):
-                if np.sign(all_shap[r, s, f]) == ref_sign:
-                    signs_match += 1
-            consistency[s, f] = signs_match / R
-    
+    # Vectorized: compare signs across all resamples simultaneously
+    # all_shap shape: (R, n_samples, M); reference_signs shape: (n_samples, M)
+    consistency = (np.sign(all_shap) == reference_signs[np.newaxis]).mean(axis=0)
+
     # Average across samples to get per-feature consistency
     return consistency.mean(axis=0)
 

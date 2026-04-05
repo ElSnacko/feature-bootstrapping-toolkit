@@ -775,8 +775,8 @@ def fit_learning_curve(
             "extrapolations": extrapolations,
         })
 
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"fit_learning_curve failed, returning default result: {e}")
 
     return result
 
