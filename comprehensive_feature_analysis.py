@@ -20,7 +20,7 @@ Sections:
   11. SHAP Entropy / Concentration
   12. Cross-Seed SHAP Consistency
   13. Bootstrap Stability Toolkit (Marginal)
-  13b. OOT Bootstrap Stability Comparison (Marginal)
+  13b. holdout Bootstrap Stability Comparison (Marginal)
   14. Master Comparison Table
   15. Correlation Analysis
   16. Feature Reliability Scoring
@@ -28,7 +28,7 @@ Sections:
   
   NEW SHAP Stability Sections:
   18. SHAP Stability Learning Curves
-  19. Train/OOT Drift Analysis
+  19. Train/Holdout Drift Analysis
   20. Marginal vs SHAP Comparison Summary
 
 All output files are saved in the feature-bootstrapping-toolkit/ directory.
@@ -87,7 +87,7 @@ except ImportError:
 try:
     from bootstrap_stability import (
         SHAPStability,
-        TrainOOTStability,
+        TrainHoldoutStability,
         SHAPMetricRunner,
         aggregate_shap_metrics,
         get_drift_grade,
@@ -97,7 +97,7 @@ except ImportError as e:
     print(f"WARNING: SHAP stability modules not available. Sections 18-20 will be skipped. Error: {e}")
     SHAP_STABILITY_AVAILABLE = False
     SHAPStability = None
-    TrainOOTStability = None
+    TrainHoldoutStability = None
 
 warnings.filterwarnings("ignore")
 
@@ -599,12 +599,12 @@ def section13_bootstrap_stability(df_train, feature_names):
 
 
 # =============================================================================
-# Section 13b: OOT Bootstrap Stability Comparison
+# Section 13b: holdout Bootstrap Stability Comparison
 # =============================================================================
 @section_timer
-def section13b_oot_bootstrap_comparison(train_df, X_test_df, train_panel_results, feature_names):
+def section13b_holdout_bootstrap_comparison(train_df, X_test_df, train_panel_results, feature_names):
     """
-    Compare bootstrap stability between training and test (OOT) data.
+    Compare bootstrap stability between training and test (holdout) data.
 
     Args:
         train_df: Training DataFrame with target column
@@ -613,38 +613,38 @@ def section13b_oot_bootstrap_comparison(train_df, X_test_df, train_panel_results
         feature_names: List of all feature names
 
     Returns:
-        dict with keys: 'oot_panel_results', 'comparison_df', 'shifted_features'
+        dict with keys: 'holdout_panel_results', 'comparison_df', 'shifted_features'
     """
     if BootstrapStability is None:
-        print("BootstrapStability not available. Skipping OOT comparison.")
+        print("BootstrapStability not available. Skipping holdout comparison.")
         return {
-            "oot_panel_results": {},
+            "holdout_panel_results": {},
             "comparison_df": pd.DataFrame(),
             "shifted_features": pd.DataFrame(),
         }
 
-    # --- Run bootstrap stability on test (OOT) data (no target) ---
-    print("Running BootstrapStability.fit_panel() on OOT (test) data...")
+    # --- Run bootstrap stability on test (holdout) data (no target) ---
+    print("Running BootstrapStability.fit_panel() on holdout (test) data...")
     print(f"  Features to analyze: {len(feature_names)}")
-    bs_oot = BootstrapStability(n_resamples=15, random_state=RANDOM_STATE)
-    oot_panel_result = bs_oot.fit_panel(X_test_df, target_col=None, feature_cols=feature_names)
+    bs_holdout = BootstrapStability(n_resamples=15, random_state=RANDOM_STATE)
+    holdout_panel_result = bs_holdout.fit_panel(X_test_df, target_col=None, feature_cols=feature_names)
 
-    oot_summary = oot_panel_result["summary"]
-    print(f"\n  Successfully analyzed (OOT): {len(oot_summary)} features")
-    print(f"  Skipped (categorical/other): {len(feature_names) - len(oot_summary)} features")
+    holdout_summary = holdout_panel_result["summary"]
+    print(f"\n  Successfully analyzed (holdout): {len(holdout_summary)} features")
+    print(f"  Skipped (categorical/other): {len(feature_names) - len(holdout_summary)} features")
 
-    if not oot_summary.empty:
+    if not holdout_summary.empty:
         print("\nOOT Bootstrap Stability Complexity Scores:")
         cols = ["feature", "complexity_score"]
-        available_cols = [c for c in cols if c in oot_summary.columns]
-        print(oot_summary[available_cols].to_string(index=False))
+        available_cols = [c for c in cols if c in holdout_summary.columns]
+        print(holdout_summary[available_cols].to_string(index=False))
 
     # --- Build comparison between train and test ---
     train_summary = train_panel_results.get("summary", pd.DataFrame())
-    if train_summary.empty or oot_summary.empty:
+    if train_summary.empty or holdout_summary.empty:
         print("\n  Cannot compare: one or both panel results are empty.")
         return {
-            "oot_panel_results": oot_panel_result,
+            "holdout_panel_results": holdout_panel_result,
             "comparison_df": pd.DataFrame(),
             "shifted_features": pd.DataFrame(),
         }
@@ -653,37 +653,37 @@ def section13b_oot_bootstrap_comparison(train_df, X_test_df, train_panel_results
     comparison_df = train_summary[["feature", "complexity_score"]].rename(
         columns={"complexity_score": "train_complexity_score"}
     ).merge(
-        oot_summary[["feature", "complexity_score"]].rename(
-            columns={"complexity_score": "oot_complexity_score"}
+        holdout_summary[["feature", "complexity_score"]].rename(
+            columns={"complexity_score": "holdout_complexity_score"}
         ),
         on="feature",
         how="inner",
     )
 
     # Compute shift: test - train (positive = degraded in test)
-    comparison_df["oot_complexity_shift"] = (
-        comparison_df["oot_complexity_score"] - comparison_df["train_complexity_score"]
+    comparison_df["holdout_complexity_shift"] = (
+        comparison_df["holdout_complexity_score"] - comparison_df["train_complexity_score"]
     )
-    comparison_df["abs_shift"] = comparison_df["oot_complexity_shift"].abs()
+    comparison_df["abs_shift"] = comparison_df["holdout_complexity_shift"].abs()
     comparison_df = comparison_df.sort_values(
         "abs_shift", ascending=False
     ).reset_index(drop=True)
 
-    print("\nTrain vs OOT Complexity Comparison:")
+    print("\nTrain vs holdout Complexity Comparison:")
     print(comparison_df[["feature", "train_complexity_score",
-                         "oot_complexity_score", "oot_complexity_shift"]].to_string(index=False))
+                         "holdout_complexity_score", "holdout_complexity_shift"]].to_string(index=False))
 
-    # --- Visualization 1: Scatter plot train vs OOT complexity ---
+    # --- Visualization 1: Scatter plot train vs holdout complexity ---
     fig, ax = plt.subplots(figsize=(10, 8))
     ax.scatter(
         comparison_df["train_complexity_score"],
-        comparison_df["oot_complexity_score"],
+        comparison_df["holdout_complexity_score"],
         s=60, alpha=0.7, edgecolors="black", linewidth=0.5,
     )
 
     # Diagonal reference line
     all_vals = pd.concat([
-        comparison_df["train_complexity_score"], comparison_df["oot_complexity_score"]
+        comparison_df["train_complexity_score"], comparison_df["holdout_complexity_score"]
     ])
     lo, hi = all_vals.min(), all_vals.max()
     margin = (hi - lo) * 0.05
@@ -694,18 +694,18 @@ def section13b_oot_bootstrap_comparison(train_df, X_test_df, train_panel_results
     for _, row in comparison_df.iterrows():
         ax.annotate(
             row["feature"],
-            (row["train_complexity_score"], row["oot_complexity_score"]),
+            (row["train_complexity_score"], row["holdout_complexity_score"]),
             fontsize=7, alpha=0.8,
             xytext=(5, 5), textcoords="offset points",
         )
 
     ax.set_xlabel("Train Complexity Score", fontsize=12)
-    ax.set_ylabel("OOT (Test) Complexity Score", fontsize=12)
-    ax.set_title("Train vs OOT Bootstrap Complexity", fontsize=14)
+    ax.set_ylabel("holdout (Test) Complexity Score", fontsize=12)
+    ax.set_title("Train vs holdout Bootstrap Complexity", fontsize=14)
     ax.legend(fontsize=10)
     ax.grid(True, alpha=0.3)
 
-    output_path = os.path.join(OUTPUT_DIR, "oot_complexity_scatter.png")
+    output_path = os.path.join(OUTPUT_DIR, "holdout_complexity_scatter.png")
     fig.tight_layout()
     fig.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -713,46 +713,46 @@ def section13b_oot_bootstrap_comparison(train_df, X_test_df, train_panel_results
 
     # --- Visualization 2: Bar chart of top 10 features by absolute shift ---
     top_shift = comparison_df.head(10).copy()
-    top_shift = top_shift.sort_values("oot_complexity_shift", ascending=True)
+    top_shift = top_shift.sort_values("holdout_complexity_shift", ascending=True)
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    colors = ["#d62728" if v > 0 else "#2ca02c" for v in top_shift["oot_complexity_shift"]]
-    ax.barh(top_shift["feature"], top_shift["oot_complexity_shift"], color=colors, edgecolor="black")
+    colors = ["#d62728" if v > 0 else "#2ca02c" for v in top_shift["holdout_complexity_shift"]]
+    ax.barh(top_shift["feature"], top_shift["holdout_complexity_shift"], color=colors, edgecolor="black")
     ax.axvline(x=0, color="black", linewidth=0.8)
-    ax.set_xlabel("Complexity Shift (OOT - Train)", fontsize=12)
+    ax.set_xlabel("Complexity Shift (holdout - Train)", fontsize=12)
     ax.set_ylabel("Feature", fontsize=12)
-    ax.set_title("Top 10 Features by Absolute Complexity Shift (OOT vs Train)", fontsize=13)
+    ax.set_title("Top 10 Features by Absolute Complexity Shift (holdout vs Train)", fontsize=13)
     ax.grid(True, alpha=0.3, axis="x")
 
-    output_path2 = os.path.join(OUTPUT_DIR, "oot_complexity_shift.png")
+    output_path2 = os.path.join(OUTPUT_DIR, "holdout_complexity_shift.png")
     fig.tight_layout()
     fig.savefig(output_path2, dpi=150, bbox_inches="tight")
     plt.close(fig)
-    print(f"OOT complexity shift bar chart saved to: {output_path2}")
+    print(f"holdout complexity shift bar chart saved to: {output_path2}")
 
-    # --- Print OOT insights ---
+    # --- Print holdout insights ---
     n_features = len(comparison_df)
     print("\n" + "-" * 60)
-    print("OOT BOOTSTRAP STABILITY INSIGHTS")
+    print("holdout BOOTSTRAP STABILITY INSIGHTS")
     print("-" * 60)
 
     # Features with largest stability DEGRADATION (positive shift)
-    degraded = comparison_df.nlargest(5, "oot_complexity_shift")
-    if not degraded.empty and degraded["oot_complexity_shift"].max() > 0:
-        print("\n► Features with Largest Stability DEGRADATION in OOT (positive shift):")
+    degraded = comparison_df.nlargest(5, "holdout_complexity_shift")
+    if not degraded.empty and degraded["holdout_complexity_shift"].max() > 0:
+        print("\n► Features with Largest Stability DEGRADATION in holdout (positive shift):")
         for _, row in degraded.iterrows():
-            if row["oot_complexity_shift"] > 0:
-                print(f"  - {row['feature']}: shift = +{row['oot_complexity_shift']:.4f} "
-                      f"(train={row['train_complexity_score']:.4f} → oot={row['oot_complexity_score']:.4f})")
+            if row["holdout_complexity_shift"] > 0:
+                print(f"  - {row['feature']}: shift = +{row['holdout_complexity_shift']:.4f} "
+                      f"(train={row['train_complexity_score']:.4f} → oot={row['holdout_complexity_score']:.4f})")
 
     # Features with largest stability IMPROVEMENT (negative shift)
-    improved = comparison_df.nsmallest(5, "oot_complexity_shift")
-    if not improved.empty and improved["oot_complexity_shift"].min() < 0:
-        print("\n► Features with Largest Stability IMPROVEMENT in OOT (negative shift):")
+    improved = comparison_df.nsmallest(5, "holdout_complexity_shift")
+    if not improved.empty and improved["holdout_complexity_shift"].min() < 0:
+        print("\n► Features with Largest Stability IMPROVEMENT in holdout (negative shift):")
         for _, row in improved.iterrows():
-            if row["oot_complexity_shift"] < 0:
-                print(f"  - {row['feature']}: shift = {row['oot_complexity_shift']:.4f} "
-                      f"(train={row['train_complexity_score']:.4f} → oot={row['oot_complexity_score']:.4f})")
+            if row["holdout_complexity_shift"] < 0:
+                print(f"  - {row['feature']}: shift = {row['holdout_complexity_shift']:.4f} "
+                      f"(train={row['train_complexity_score']:.4f} → oot={row['holdout_complexity_score']:.4f})")
 
     # Features with consistent stability (small shift)
     median_abs_shift = comparison_df["abs_shift"].median()
@@ -760,16 +760,16 @@ def section13b_oot_bootstrap_comparison(train_df, X_test_df, train_panel_results
     if not consistent.empty:
         print(f"\n► Features with Consistent Stability (abs shift ≤ median {median_abs_shift:.4f}):")
         for _, row in consistent.iterrows():
-            print(f"  - {row['feature']}: shift = {row['oot_complexity_shift']:+.4f}")
+            print(f"  - {row['feature']}: shift = {row['holdout_complexity_shift']:+.4f}")
 
     print("\n► Interpretation:")
-    print("  Features with large positive shifts are MORE UNSTABLE in test/OOT data,")
+    print("  Features with large positive shifts are MORE UNSTABLE in test/holdout data,")
     print("  suggesting distributional drift that may degrade model performance in production.")
-    print("  Features with negative shifts are MORE STABLE in OOT, indicating robust behavior.")
+    print("  Features with negative shifts are MORE STABLE in holdout, indicating robust behavior.")
     print("  Features near zero shift show consistent stability across train and test.")
 
     return {
-        "oot_panel_results": oot_panel_result,
+        "holdout_panel_results": holdout_panel_result,
         "comparison_df": comparison_df,
         "shifted_features": comparison_df,
     }
@@ -792,7 +792,7 @@ def section14_master_table(
     df_dist,
     df_consistency,
     df_bootstrap,
-    oot_comparison=None,
+    holdout_comparison=None,
 ):
     """Merge ALL metrics into a single DataFrame."""
     master = pd.DataFrame({"feature": feature_names})
@@ -863,13 +863,13 @@ def section14_master_table(
         master["complexity_score"] = np.nan
         master["complexity_rank"] = np.nan
 
-    # OOT bootstrap stability
-    if oot_comparison is not None and not oot_comparison.get("comparison_df", pd.DataFrame()).empty:
-        oot_df = oot_comparison["comparison_df"][["feature", "oot_complexity_score", "oot_complexity_shift"]]
-        master = master.merge(oot_df, on="feature", how="left")
+    # holdout bootstrap stability
+    if holdout_comparison is not None and not holdout_comparison.get("comparison_df", pd.DataFrame()).empty:
+        holdout_df = holdout_comparison["comparison_df"][["feature", "holdout_complexity_score", "holdout_complexity_shift"]]
+        master = master.merge(holdout_df, on="feature", how="left")
     else:
-        master["oot_complexity_score"] = np.nan
-        master["oot_complexity_shift"] = np.nan
+        master["holdout_complexity_score"] = np.nan
+        master["holdout_complexity_shift"] = np.nan
 
     # Sort by SHAP importance
     master = master.sort_values("shap_importance_norm", ascending=False).reset_index(drop=True)
@@ -907,8 +907,8 @@ def section15_correlation_analysis(master):
         "shap_total_interaction",
         "cross_seed_std_rank",
         "complexity_score",
-        "oot_complexity_score",
-        "oot_complexity_shift",
+        "holdout_complexity_score",
+        "holdout_complexity_shift",
     ]
 
     # Filter to columns that exist and have enough non-null values
@@ -1045,7 +1045,7 @@ def section16_reliability_scoring(master):
 # Section 17: Key Findings Summary
 # =============================================================================
 @section_timer
-def section17_key_findings(master, df_reliability, entropy_info, df_dist, df_inter, oot_comparison=None):
+def section17_key_findings(master, df_reliability, entropy_info, df_dist, df_inter, holdout_comparison=None):
     """Print comprehensive text summary of key findings."""
     print("KEY FINDINGS SUMMARY")
     print("=" * 80)
@@ -1099,25 +1099,25 @@ def section17_key_findings(master, df_reliability, entropy_info, df_dist, df_int
     print(f"  Normalized: {entropy_info['normalized_entropy']:.4f}")
     print(f"  Interpretation: {entropy_info['interpretation']}")
 
-    # OOT stability insights
-    if oot_comparison is not None and not oot_comparison.get("comparison_df", pd.DataFrame()).empty:
-        oot_comp = oot_comparison["comparison_df"]
-        print(f"\n► OOT (Out-of-Time) Bootstrap Stability Insights:")
-        if "oot_complexity_shift" in oot_comp.columns:
-            max_degraded = oot_comp.loc[oot_comp["oot_complexity_shift"].idxmax()]
-            max_improved = oot_comp.loc[oot_comp["oot_complexity_shift"].idxmin()]
-            mean_abs_shift = oot_comp["oot_complexity_shift"].abs().mean()
-            print(f"  Mean absolute complexity shift (train→OOT): {mean_abs_shift:.4f}")
-            print(f"  Most degraded in OOT: {max_degraded['feature']} "
-                  f"(shift = +{max_degraded['oot_complexity_shift']:.4f})")
-            print(f"  Most improved in OOT: {max_improved['feature']} "
-                  f"(shift = {max_improved['oot_complexity_shift']:.4f})")
-            n_degraded = (oot_comp["oot_complexity_shift"] > 0).sum()
-            n_improved = (oot_comp["oot_complexity_shift"] < 0).sum()
-            print(f"  Features degraded in OOT: {n_degraded} / {len(oot_comp)}")
-            print(f"  Features improved in OOT: {n_improved} / {len(oot_comp)}")
+    # holdout stability insights
+    if holdout_comparison is not None and not holdout_comparison.get("comparison_df", pd.DataFrame()).empty:
+        holdout_comp = holdout_comparison["comparison_df"]
+        print(f"\n► holdout (Holdout) Bootstrap Stability Insights:")
+        if "holdout_complexity_shift" in holdout_comp.columns:
+            max_degraded = holdout_comp.loc[holdout_comp["holdout_complexity_shift"].idxmax()]
+            max_improved = holdout_comp.loc[holdout_comp["holdout_complexity_shift"].idxmin()]
+            mean_abs_shift = holdout_comp["holdout_complexity_shift"].abs().mean()
+            print(f"  Mean absolute complexity shift (train→holdout): {mean_abs_shift:.4f}")
+            print(f"  Most degraded in holdout: {max_degraded['feature']} "
+                  f"(shift = +{max_degraded['holdout_complexity_shift']:.4f})")
+            print(f"  Most improved in holdout: {max_improved['feature']} "
+                  f"(shift = {max_improved['holdout_complexity_shift']:.4f})")
+            n_degraded = (holdout_comp["holdout_complexity_shift"] > 0).sum()
+            n_improved = (holdout_comp["holdout_complexity_shift"] < 0).sum()
+            print(f"  Features degraded in holdout: {n_degraded} / {len(holdout_comp)}")
+            print(f"  Features improved in holdout: {n_improved} / {len(holdout_comp)}")
     else:
-        print(f"\n► OOT Bootstrap Stability: not available (skipped or empty)")
+        print(f"\n► holdout Bootstrap Stability: not available (skipped or empty)")
 
     print("\n" + "=" * 80)
     print("ANALYSIS COMPLETE")
@@ -1330,32 +1330,32 @@ def section18_shap_stability_learning_curves(
 
 
 # =============================================================================
-# Section 19: Train/OOT Drift Analysis
+# Section 19: Train/Holdout Drift Analysis
 # =============================================================================
 @section_timer
-def section19_train_oot_drift(X_train, y_train, X_test, y_test, feature_names):
+def section19_train_holdout_drift(X_train, y_train, X_test, y_test, feature_names):
     """
-    Compare train vs OOT (out-of-time/test) SHAP stability.
+    Compare train vs holdout (holdout/test) SHAP stability.
     
     This section:
-    - Uses TrainOOTStability to compare SHAP patterns
+    - Uses TrainHoldoutStability to compare SHAP patterns
     - Computes drift metrics between periods
     - Generates drift grades (A-F) per feature
     """
-    if not SHAP_STABILITY_AVAILABLE or TrainOOTStability is None:
-        print("TrainOOTStability not available. Skipping Section 19.")
+    if not SHAP_STABILITY_AVAILABLE or TrainHoldoutStability is None:
+        print("TrainHoldoutStability not available. Skipping Section 19.")
         return None
     
-    print("Setting up Train/OOT Drift Analysis...")
+    print("Setting up Train/Holdout Drift Analysis...")
     print(f"  Train set size: {len(X_train)}")
-    print(f"  OOT (test) set size: {len(X_test)}")
+    print(f"  holdout (test) set size: {len(X_test)}")
     
     # Create model factory
     def model_factory():
         return LGBMClassifier(**{**LGBM_PARAMS, "verbose": -1})
     
-    # Initialize TrainOOTStability
-    oot_stability = TrainOOTStability(
+    # Initialize TrainHoldoutStability
+    holdout_stability = TrainHoldoutStability(
         model_factory=model_factory,
         explainer_type='tree',
         shap_subsample=500,  # Subsample for efficiency
@@ -1366,10 +1366,10 @@ def section19_train_oot_drift(X_train, y_train, X_test, y_test, feature_names):
     
     try:
         print("\nTraining model on train set and computing SHAP values...")
-        print("Computing SHAP values on OOT set...")
+        print("Computing SHAP values on holdout set...")
         
         # Fit and compare
-        results = oot_stability.fit(
+        results = holdout_stability.fit(
             X_train, y_train,
             X_test, y_test,
             feature_names=feature_names
@@ -1377,7 +1377,7 @@ def section19_train_oot_drift(X_train, y_train, X_test, y_test, feature_names):
         
         # Print summary
         print("\n" + "=" * 60)
-        print("TRAIN/OOT DRIFT ANALYSIS RESULTS")
+        print("TRAIN/holdout DRIFT ANALYSIS RESULTS")
         print("=" * 60)
         
         # Overall drift
@@ -1403,7 +1403,7 @@ def section19_train_oot_drift(X_train, y_train, X_test, y_test, feature_names):
                 drift_records.append({
                     'feature': feat,
                     'rank_train': metrics.get('rank_train', 0),
-                    'rank_oot': metrics.get('rank_oot', 0),
+                    'rank_holdout': metrics.get('rank_holdout', 0),
                     'rank_change': metrics.get('rank_change', 0),
                     'magnitude_ratio': metrics.get('magnitude_ratio', 1.0),
                     'direction_consistent': metrics.get('direction_consistent', True),
@@ -1429,7 +1429,7 @@ def section19_train_oot_drift(X_train, y_train, X_test, y_test, feature_names):
             if len(direction_flips) > 0:
                 print(f"\n► Direction Flip Features: {len(direction_flips)}")
                 for _, row in direction_flips.iterrows():
-                    print(f"    - {row['feature']}: SHAP direction changed between train and OOT")
+                    print(f"    - {row['feature']}: SHAP direction changed between train and holdout")
         
         # Visualization: Drift heatmap
         if feature_drift:
@@ -1438,20 +1438,20 @@ def section19_train_oot_drift(X_train, y_train, X_test, y_test, feature_names):
             # Plot 1: Rank comparison
             ax1 = axes[0]
             train_ranks = [feature_drift[f].get('rank_train', 0) for f in feature_names]
-            oot_ranks = [feature_drift[f].get('rank_oot', 0) for f in feature_names]
+            holdout_ranks = [feature_drift[f].get('rank_holdout', 0) for f in feature_names]
             
-            ax1.scatter(train_ranks, oot_ranks, s=60, alpha=0.7, edgecolors='black')
-            max_rank = max(max(train_ranks), max(oot_ranks))
+            ax1.scatter(train_ranks, holdout_ranks, s=60, alpha=0.7, edgecolors='black')
+            max_rank = max(max(train_ranks), max(holdout_ranks))
             ax1.plot([0, max_rank], [0, max_rank], 'k--', alpha=0.4, label='Perfect agreement')
             
             for i, feat in enumerate(feature_names):
-                ax1.annotate(feat, (train_ranks[i], oot_ranks[i]),
+                ax1.annotate(feat, (train_ranks[i], holdout_ranks[i]),
                             fontsize=6, alpha=0.7, xytext=(3, 3),
                             textcoords='offset points')
             
             ax1.set_xlabel('Train Rank', fontsize=12)
-            ax1.set_ylabel('OOT Rank', fontsize=12)
-            ax1.set_title('Feature Importance Rank: Train vs OOT', fontsize=13)
+            ax1.set_ylabel('holdout Rank', fontsize=12)
+            ax1.set_title('Feature Importance Rank: Train vs holdout', fontsize=13)
             ax1.legend()
             ax1.grid(True, alpha=0.3)
             
@@ -1470,10 +1470,10 @@ def section19_train_oot_drift(X_train, y_train, X_test, y_test, feature_names):
             ax2.legend()
             ax2.grid(True, alpha=0.3, axis='x')
             
-            plt.suptitle(f'Section 19: Train/OOT Drift Analysis (Overall Grade: {drift_grade})',
+            plt.suptitle(f'Section 19: Train/Holdout Drift Analysis (Overall Grade: {drift_grade})',
                         fontsize=14, y=1.02)
             fig.tight_layout()
-            output_path = os.path.join(OUTPUT_DIR, "section19_train_oot_drift.png")
+            output_path = os.path.join(OUTPUT_DIR, "section19_train_holdout_drift.png")
             fig.savefig(output_path, dpi=150, bbox_inches="tight")
             plt.close(fig)
             print(f"\nDrift analysis plot saved to: {output_path}")
@@ -1481,7 +1481,7 @@ def section19_train_oot_drift(X_train, y_train, X_test, y_test, feature_names):
         return results
         
     except Exception as e:
-        print(f"ERROR in Train/OOT Drift analysis: {e}")
+        print(f"ERROR in Train/Holdout Drift analysis: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -1492,7 +1492,7 @@ def section19_train_oot_drift(X_train, y_train, X_test, y_test, feature_names):
 # =============================================================================
 @section_timer
 def section20_marginal_vs_shap_comparison(
-    df_bootstrap, shap_stability_results, train_oot_results, feature_names, master
+    df_bootstrap, shap_stability_results, train_holdout_results, feature_names, master
 ):
     """
     Compare marginal complexity scores with SHAP complexity scores.
@@ -1548,17 +1548,17 @@ def section20_marginal_vs_shap_comparison(
         else:
             row['shap_complexity'] = np.nan
         
-        # Get OOT drift score from Section 19
-        if train_oot_results is not None:
-            feature_drift = train_oot_results.get('feature_drift', {})
+        # Get holdout drift score from Section 19
+        if train_holdout_results is not None:
+            feature_drift = train_holdout_results.get('feature_drift', {})
             if feat in feature_drift:
-                row['oot_drift_score'] = feature_drift[feat].get('drift_score', np.nan)
+                row['holdout_drift_score'] = feature_drift[feat].get('drift_score', np.nan)
                 row['direction_consistent'] = feature_drift[feat].get('direction_consistent', True)
             else:
-                row['oot_drift_score'] = np.nan
+                row['holdout_drift_score'] = np.nan
                 row['direction_consistent'] = True
         else:
-            row['oot_drift_score'] = np.nan
+            row['holdout_drift_score'] = np.nan
             row['direction_consistent'] = True
         
         comparison_data.append(row)
@@ -1574,7 +1574,7 @@ def section20_marginal_vs_shap_comparison(
     def classify_feature(row):
         marg = row.get('marginal_complexity', np.nan)
         shap = row.get('shap_complexity', np.nan)
-        drift = row.get('oot_drift_score', np.nan)
+        drift = row.get('holdout_drift_score', np.nan)
         
         # Handle NaN
         marg_high = not np.isnan(marg) and marg > MARGINAL_THRESHOLD
@@ -1588,7 +1588,7 @@ def section20_marginal_vs_shap_comparison(
         elif marg_high and shap_high:
             return "CONFIRMED_UNSTABLE"  # Both agree: unstable
         elif drift_high:
-            return "OOT_DRIFT"  # High drift in OOT
+            return "HOLDOUT_DRIFT"  # High drift in holdout
         else:
             return "STABLE"  # Both agree: stable
     
@@ -1596,7 +1596,7 @@ def section20_marginal_vs_shap_comparison(
     
     # Print summary
     print("\n► Classification Summary:")
-    for cls in ["STABLE", "CONFIRMED_UNSTABLE", "FALSE_ALARM", "MISSED_RISK", "OOT_DRIFT"]:
+    for cls in ["STABLE", "CONFIRMED_UNSTABLE", "FALSE_ALARM", "MISSED_RISK", "HOLDOUT_DRIFT"]:
         count = (comparison_df['classification'] == cls).sum()
         print(f"    {cls}: {count} features")
     
@@ -1604,7 +1604,7 @@ def section20_marginal_vs_shap_comparison(
     false_alarms = comparison_df[comparison_df['classification'] == 'FALSE_ALARM']
     missed_risks = comparison_df[comparison_df['classification'] == 'MISSED_RISK']
     confirmed_unstable = comparison_df[comparison_df['classification'] == 'CONFIRMED_UNSTABLE']
-    oot_drift = comparison_df[comparison_df['classification'] == 'OOT_DRIFT']
+    holdout_drift = comparison_df[comparison_df['classification'] == 'HOLDOUT_DRIFT']
     
     if len(false_alarms) > 0:
         print(f"\n► FALSE ALARMS (Marginal unstable, SHAP stable): {len(false_alarms)}")
@@ -1629,11 +1629,11 @@ def section20_marginal_vs_shap_comparison(
             print(f"    - {row['feature']}: marginal={row['marginal_complexity']:.3f}, "
                   f"shap={row['shap_complexity']:.3f}")
     
-    if len(oot_drift) > 0:
-        print(f"\n► OOT DRIFT (High drift in test period): {len(oot_drift)}")
-        print("  These features show different behavior in OOT data.")
-        for _, row in oot_drift.iterrows():
-            print(f"    - {row['feature']}: drift_score={row['oot_drift_score']:.3f}")
+    if len(holdout_drift) > 0:
+        print(f"\n► holdout DRIFT (High drift in test period): {len(holdout_drift)}")
+        print("  These features show different behavior in holdout data.")
+        for _, row in holdout_drift.iterrows():
+            print(f"    - {row['feature']}: drift_score={row['holdout_drift_score']:.3f}")
     
     # Visualization
     fig, axes = plt.subplots(2, 2, figsize=(14, 12))
@@ -1694,7 +1694,7 @@ def section20_marginal_vs_shap_comparison(
         'CONFIRMED_UNSTABLE': '#d62728',
         'FALSE_ALARM': '#ff7f0e',
         'MISSED_RISK': '#9467bd',
-        'OOT_DRIFT': '#8c564b',
+        'HOLDOUT_DRIFT': '#8c564b',
     }
     bar_colors = [colors_bar.get(c, '#7f7f7f') for c in class_counts.index]
     ax2.bar(class_counts.index, class_counts.values, color=bar_colors, edgecolor='black')
@@ -1703,17 +1703,17 @@ def section20_marginal_vs_shap_comparison(
     ax2.tick_params(axis='x', rotation=45)
     ax2.grid(True, alpha=0.3, axis='y')
     
-    # Plot 3: OOT Drift Score Distribution
+    # Plot 3: Holdout Drift Score Distribution
     ax3 = axes[1, 0]
-    if comparison_df['oot_drift_score'].notna().any():
-        drift_data = comparison_df[comparison_df['oot_drift_score'].notna()].sort_values('oot_drift_score', ascending=True)
+    if comparison_df['holdout_drift_score'].notna().any():
+        drift_data = comparison_df[comparison_df['holdout_drift_score'].notna()].sort_values('holdout_drift_score', ascending=True)
         colors_drift = ['#d62728' if x > DRIFT_THRESHOLD else '#2ca02c'
-                       for x in drift_data['oot_drift_score']]
-        ax3.barh(drift_data['feature'], drift_data['oot_drift_score'],
+                       for x in drift_data['holdout_drift_score']]
+        ax3.barh(drift_data['feature'], drift_data['holdout_drift_score'],
                 color=colors_drift, edgecolor='black', alpha=0.8)
         ax3.axvline(x=DRIFT_THRESHOLD, color='red', linestyle='--', alpha=0.5)
-        ax3.set_xlabel('OOT Drift Score', fontsize=12)
-        ax3.set_title('Train vs OOT Drift Score', fontsize=13)
+        ax3.set_xlabel('Holdout Drift Score', fontsize=12)
+        ax3.set_title('Train vs Holdout Drift Score', fontsize=13)
         ax3.grid(True, alpha=0.3, axis='x')
     
     # Plot 4: Recommendations
@@ -1730,8 +1730,8 @@ def section20_marginal_vs_shap_comparison(
     if len(false_alarms) > 0:
         recommendations.append(f"🟡 {len(false_alarms)} FALSE ALARMS: Marginal analysis flagged\n"
                               f"   these, but SHAP shows stable contributions.")
-    if len(oot_drift) > 0:
-        recommendations.append(f"📊 {len(oot_drift)} OOT DRIFT: Features showing different\n"
+    if len(holdout_drift) > 0:
+        recommendations.append(f"📊 {len(holdout_drift)} holdout DRIFT: Features showing different\n"
                               f"   behavior in test period.")
     
     if recommendations:
@@ -1817,8 +1817,8 @@ def main():
     # Section 13: Bootstrap Stability Toolkit
     df_bootstrap, train_panel_results = section13_bootstrap_stability(df_train, feature_names)
 
-    # Section 13b: OOT Bootstrap Stability Comparison
-    oot_results = section13b_oot_bootstrap_comparison(
+    # Section 13b: holdout Bootstrap Stability Comparison
+    holdout_results = section13b_holdout_bootstrap_comparison(
         df_train, X_test, train_panel_results, feature_names,
     )
 
@@ -1836,7 +1836,7 @@ def main():
         df_dist,
         df_consistency,
         df_bootstrap,
-        oot_comparison=oot_results,
+        holdout_comparison=holdout_results,
     )
 
     # Section 15: Correlation Analysis
@@ -1846,7 +1846,7 @@ def main():
     df_reliability = section16_reliability_scoring(master)
 
     # Section 17: Key Findings Summary
-    section17_key_findings(master, df_reliability, entropy_info, df_dist, df_inter, oot_comparison=oot_results)
+    section17_key_findings(master, df_reliability, entropy_info, df_dist, df_inter, holdout_comparison=holdout_results)
 
     # =========================================================================
     # NEW SHAP Stability Sections (18-20)
@@ -1857,14 +1857,14 @@ def main():
         X_train, y_train, X_holdout, feature_names, df_bootstrap
     )
     
-    # Section 19: Train/OOT Drift Analysis
-    train_oot_results_new = section19_train_oot_drift(
+    # Section 19: Train/Holdout Drift Analysis
+    train_holdout_results_new = section19_train_holdout_drift(
         X_train, y_train, X_test, y_test, feature_names
     )
     
     # Section 20: Marginal vs SHAP Comparison Summary
     comparison_df = section20_marginal_vs_shap_comparison(
-        df_bootstrap, shap_stability_results, train_oot_results_new, feature_names, master
+        df_bootstrap, shap_stability_results, train_holdout_results_new, feature_names, master
     )
     
     # =========================================================================
@@ -1872,7 +1872,7 @@ def main():
     # =========================================================================
     _write_comprehensive_summary(
         master, df_reliability, entropy_info, df_dist, df_inter,
-        oot_results, shap_stability_results, train_oot_results_new, comparison_df
+        holdout_results, shap_stability_results, train_holdout_results_new, comparison_df
     )
 
     total_elapsed = time.time() - total_start
@@ -1881,7 +1881,7 @@ def main():
 
 def _write_comprehensive_summary(
     master, df_reliability, entropy_info, df_dist, df_inter,
-    oot_results, shap_stability_results, train_oot_results, comparison_df
+    holdout_results, shap_stability_results, train_holdout_results, comparison_df
 ):
     """Write comprehensive analysis summary to text file."""
     summary_path = os.path.join(OUTPUT_DIR, "comprehensive_analysis_summary.txt")
@@ -1910,7 +1910,7 @@ def _write_comprehensive_summary(
             f.write("-" * 40 + "\n")
             
             # Count classifications
-            for cls in ["STABLE", "CONFIRMED_UNSTABLE", "FALSE_ALARM", "MISSED_RISK", "OOT_DRIFT"]:
+            for cls in ["STABLE", "CONFIRMED_UNSTABLE", "FALSE_ALARM", "MISSED_RISK", "HOLDOUT_DRIFT"]:
                 count = (comparison_df['classification'] == cls).sum()
                 f.write(f"  {cls}: {count} features\n")
             f.write("\n")
@@ -1931,12 +1931,12 @@ def _write_comprehensive_summary(
                     f.write(f"    - {row['feature']}\n")
                 f.write("\n")
         
-        # Section: Train/OOT Drift
-        if train_oot_results is not None:
-            f.write("TRAIN/OOT DRIFT ANALYSIS\n")
+        # Section: Train/Holdout Drift
+        if train_holdout_results is not None:
+            f.write("TRAIN/holdout DRIFT ANALYSIS\n")
             f.write("-" * 40 + "\n")
-            f.write(f"  Overall Drift Score: {train_oot_results.get('overall_drift_score', 'N/A')}\n")
-            f.write(f"  Overall Drift Grade: {train_oot_results.get('drift_grade', 'N/A')}\n\n")
+            f.write(f"  Overall Drift Score: {train_holdout_results.get('overall_drift_score', 'N/A')}\n")
+            f.write(f"  Overall Drift Grade: {train_holdout_results.get('drift_grade', 'N/A')}\n\n")
         
         # Section: Key Recommendations
         f.write("KEY RECOMMENDATIONS\n")

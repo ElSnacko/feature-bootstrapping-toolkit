@@ -1,9 +1,9 @@
 """
-Train/OOT SHAP Stability Module
+Train/holdout SHAP Stability Module
 
 This module provides tools for measuring SHAP stability between train and
-out-of-time (OOT) periods. This is the key production stability question:
-do features contribute to predictions the same way in the OOT period as
+holdout (holdout) periods. This is the key production stability question:
+do features contribute to predictions the same way in the holdout period as
 they did in training?
 """
 
@@ -21,7 +21,7 @@ class DriftResult:
     """Container for drift metric results."""
     name: str
     train_value: float
-    oot_value: float
+    holdout_value: float
     drift: float
     threshold: float
     flagged: bool
@@ -30,7 +30,7 @@ class DriftResult:
         return {
             "name": self.name,
             "train_value": float(self.train_value),
-            "oot_value": float(self.oot_value),
+            "holdout_value": float(self.holdout_value),
             "drift": float(self.drift),
             "threshold": float(self.threshold),
             "flagged": bool(self.flagged),
@@ -90,17 +90,17 @@ def _compute_shap_values(
 
 def compute_shap_rank_correlation(
     train_shap: np.ndarray,
-    oot_shap: np.ndarray,
+    holdout_shap: np.ndarray,
 ) -> float:
     """
-    Compute Spearman rank correlation of feature importance between train and OOT.
+    Compute Spearman rank correlation of feature importance between train and holdout.
     
     Parameters
     ----------
     train_shap : np.ndarray
         SHAP values from train set. Shape: (n_samples, n_features)
-    oot_shap : np.ndarray
-        SHAP values from OOT set. Shape: (n_samples, n_features)
+    holdout_shap : np.ndarray
+        SHAP values from holdout set. Shape: (n_samples, n_features)
     
     Returns
     -------
@@ -111,23 +111,23 @@ def compute_shap_rank_correlation(
     
     # Compute mean |SHAP| per feature
     train_importance = np.abs(train_shap).mean(axis=0)
-    oot_importance = np.abs(oot_shap).mean(axis=0)
+    holdout_importance = np.abs(holdout_shap).mean(axis=0)
     
     # Compute ranks
     train_ranks = np.argsort(np.argsort(-train_importance))
-    oot_ranks = np.argsort(np.argsort(-oot_importance))
+    holdout_ranks = np.argsort(np.argsort(-holdout_importance))
     
     # Spearman correlation
-    corr, _ = spearmanr(train_ranks, oot_ranks)
+    corr, _ = spearmanr(train_ranks, holdout_ranks)
     return float(corr)
 
 
 def compute_direction_flip_rate(
     train_shap: np.ndarray,
-    oot_shap: np.ndarray,
+    holdout_shap: np.ndarray,
 ) -> float:
     """
-    Compute fraction of samples where SHAP sign flips between train and OOT.
+    Compute fraction of samples where SHAP sign flips between train and holdout.
     
     For samples that appear in both datasets, compute the fraction where
     the SHAP sign differs.
@@ -136,8 +136,8 @@ def compute_direction_flip_rate(
     ----------
     train_shap : np.ndarray
         SHAP values from train set.
-    oot_shap : np.ndarray
-        SHAP values from OOT set.
+    holdout_shap : np.ndarray
+        SHAP values from holdout set.
     
     Returns
     -------
@@ -146,14 +146,14 @@ def compute_direction_flip_rate(
     """
     # Compute mean SHAP sign per feature
     train_sign = np.sign(train_shap.mean(axis=0))
-    oot_sign = np.sign(oot_shap.mean(axis=0))
+    holdout_sign = np.sign(holdout_shap.mean(axis=0))
     
     # Handle zeros
     train_sign = np.where(train_sign == 0, 1, train_sign)
-    oot_sign = np.where(oot_sign == 0, 1, oot_sign)
+    holdout_sign = np.where(holdout_sign == 0, 1, holdout_sign)
     
     # Count flips
-    flips = (train_sign != oot_sign).sum()
+    flips = (train_sign != holdout_sign).sum()
     total = len(train_sign)
     
     return float(flips / total) if total > 0 else 0.0
@@ -161,17 +161,17 @@ def compute_direction_flip_rate(
 
 def compute_magnitude_drift(
     train_shap: np.ndarray,
-    oot_shap: np.ndarray,
+    holdout_shap: np.ndarray,
 ) -> float:
     """
-    Compute mean change in |SHAP| magnitude between train and OOT.
+    Compute mean change in |SHAP| magnitude between train and holdout.
     
     Parameters
     ----------
     train_shap : np.ndarray
         SHAP values from train set.
-    oot_shap : np.ndarray
-        SHAP values from OOT set.
+    holdout_shap : np.ndarray
+        SHAP values from holdout set.
     
     Returns
     -------
@@ -180,11 +180,11 @@ def compute_magnitude_drift(
     """
     # Compute mean |SHAP| per feature
     train_mag = np.abs(train_shap).mean(axis=0)
-    oot_mag = np.abs(oot_shap).mean(axis=0)
+    holdout_mag = np.abs(holdout_shap).mean(axis=0)
     
     # Compute relative change
     with np.errstate(divide='ignore', invalid='ignore'):
-        relative_change = np.abs(oot_mag - train_mag) / (train_mag + 1e-10)
+        relative_change = np.abs(holdout_mag - train_mag) / (train_mag + 1e-10)
         relative_change = np.where(np.isfinite(relative_change), relative_change, 0)
     
     return float(np.mean(relative_change))
@@ -192,18 +192,18 @@ def compute_magnitude_drift(
 
 def compute_topk_overlap(
     train_shap: np.ndarray,
-    oot_shap: np.ndarray,
+    holdout_shap: np.ndarray,
     k: int = 10,
 ) -> float:
     """
-    Compute Jaccard overlap of top-k features between train and OOT.
+    Compute Jaccard overlap of top-k features between train and holdout.
     
     Parameters
     ----------
     train_shap : np.ndarray
         SHAP values from train set.
-    oot_shap : np.ndarray
-        SHAP values from OOT set.
+    holdout_shap : np.ndarray
+        SHAP values from holdout set.
     k : int
         Number of top features to consider.
     
@@ -217,22 +217,22 @@ def compute_topk_overlap(
     
     # Compute mean |SHAP| per feature
     train_importance = np.abs(train_shap).mean(axis=0)
-    oot_importance = np.abs(oot_shap).mean(axis=0)
+    holdout_importance = np.abs(holdout_shap).mean(axis=0)
     
     # Get top-k indices
     train_topk = set(np.argsort(-train_importance)[:k])
-    oot_topk = set(np.argsort(-oot_importance)[:k])
+    holdout_topk = set(np.argsort(-holdout_importance)[:k])
     
     # Jaccard overlap
-    intersection = len(train_topk & oot_topk)
-    union = len(train_topk | oot_topk)
+    intersection = len(train_topk & holdout_topk)
+    union = len(train_topk | holdout_topk)
     
     return float(intersection / union) if union > 0 else 0.0
 
 
 def compute_per_feature_drift(
     train_shap: np.ndarray,
-    oot_shap: np.ndarray,
+    holdout_shap: np.ndarray,
     feature_names: List[str],
 ) -> Dict[str, Dict]:
     """
@@ -242,8 +242,8 @@ def compute_per_feature_drift(
     ----------
     train_shap : np.ndarray
         SHAP values from train set.
-    oot_shap : np.ndarray
-        SHAP values from OOT set.
+    holdout_shap : np.ndarray
+        SHAP values from holdout set.
     feature_names : List[str]
         Feature names.
     
@@ -256,35 +256,35 @@ def compute_per_feature_drift(
     
     # Compute mean |SHAP| per feature
     train_importance = np.abs(train_shap).mean(axis=0)
-    oot_importance = np.abs(oot_shap).mean(axis=0)
+    holdout_importance = np.abs(holdout_shap).mean(axis=0)
     
     # Compute ranks
     train_ranks = np.argsort(np.argsort(-train_importance)) + 1
-    oot_ranks = np.argsort(np.argsort(-oot_importance)) + 1
+    holdout_ranks = np.argsort(np.argsort(-holdout_importance)) + 1
     
     # Compute signs
     train_sign = np.sign(train_shap.mean(axis=0))
-    oot_sign = np.sign(oot_shap.mean(axis=0))
+    holdout_sign = np.sign(holdout_shap.mean(axis=0))
     
     # Per-feature metrics
     feature_drift = {}
     for f, fname in enumerate(feature_names):
         # Rank change
-        rank_change = int(train_ranks[f] - oot_ranks[f])
+        rank_change = int(train_ranks[f] - holdout_ranks[f])
         
         # Magnitude ratio
         train_mag = train_importance[f]
-        oot_mag = oot_importance[f]
-        magnitude_ratio = float(oot_mag / (train_mag + 1e-10))
+        holdout_mag = holdout_importance[f]
+        magnitude_ratio = float(holdout_mag / (train_mag + 1e-10))
         
         # Direction consistency
         train_s = train_sign[f] if train_sign[f] != 0 else 1
-        oot_s = oot_sign[f] if oot_sign[f] != 0 else 1
-        direction_consistent = int(train_s == oot_s)
+        holdout_s = holdout_sign[f] if holdout_sign[f] != 0 else 1
+        direction_consistent = int(train_s == holdout_s)
         
         # Wasserstein distance
         from scipy.stats import wasserstein_distance
-        wasserstein = float(wasserstein_distance(train_shap[:, f], oot_shap[:, f]))
+        wasserstein = float(wasserstein_distance(train_shap[:, f], holdout_shap[:, f]))
         
         # Composite drift score
         drift_score = 0.0
@@ -295,10 +295,10 @@ def compute_per_feature_drift(
         
         feature_drift[fname] = {
             "rank_train": int(train_ranks[f]),
-            "rank_oot": int(oot_ranks[f]),
+            "rank_holdout": int(holdout_ranks[f]),
             "rank_change": rank_change,
             "magnitude_train": float(train_mag),
-            "magnitude_oot": float(oot_mag),
+            "magnitude_holdout": float(holdout_mag),
             "magnitude_ratio": magnitude_ratio,
             "direction_consistent": bool(direction_consistent),
             "wasserstein": wasserstein,
@@ -316,7 +316,7 @@ def compute_overall_drift_score(
     weights: dict = None,
 ) -> float:
     """
-    Compute overall drift score from train to OOT.
+    Compute overall drift score from train to holdout.
     
     Parameters
     ----------
@@ -388,12 +388,12 @@ def get_drift_grade(drift_score: float) -> str:
         return "F"
 
 
-class TrainOOTStability:
+class TrainHoldoutStability:
     """
-    Measure SHAP stability between train and out-of-time periods.
+    Measure SHAP stability between train and holdout sets.
     
     This is the key production stability question: do features contribute
-    to predictions the same way in the OOT period as in training?
+    to predictions the same way in the holdout period as in training?
     
     Parameters
     ----------
@@ -414,10 +414,10 @@ class TrainOOTStability:
     
     Examples
     --------
-    >>> from bootstrap_stability import TrainOOTStability
+    >>> from bootstrap_stability import TrainHoldoutStability
     >>> 
-    >>> oot_stability = TrainOOTStability(model_factory=create_model)
-    >>> results = oot_stability.fit(X_train, y_train, X_oot, y_oot)
+    >>> holdout_stability = TrainHoldoutStability(model_factory=create_model)
+    >>> results = holdout_stability.fit(X_train, y_train, X_holdout, y_holdout)
     >>> print(f"Drift grade: {results['drift_grade']}")
     """
     
@@ -448,12 +448,12 @@ class TrainOOTStability:
         self,
         X_train: Union[pd.DataFrame, np.ndarray],
         y_train: Union[pd.Series, np.ndarray],
-        X_oot: Union[pd.DataFrame, np.ndarray],
-        y_oot: Union[pd.Series, np.ndarray] = None,
+        X_holdout: Union[pd.DataFrame, np.ndarray],
+        y_holdout: Union[pd.Series, np.ndarray] = None,
         feature_names: list = None,
     ) -> dict:
         """
-        Compare SHAP patterns between train and OOT.
+        Compare SHAP patterns between train and holdout.
         
         Parameters
         ----------
@@ -461,10 +461,10 @@ class TrainOOTStability:
             Training features.
         y_train : pd.Series or np.ndarray
             Training target.
-        X_oot : pd.DataFrame or np.ndarray
-            OOT features.
-        y_oot : pd.Series or np.ndarray, optional
-            OOT target (not used for SHAP, only for metadata).
+        X_holdout : pd.DataFrame or np.ndarray
+            holdout features.
+        y_holdout : pd.Series or np.ndarray, optional
+            holdout target (not used for SHAP, only for metadata).
         feature_names : list, optional
             Feature names.
         
@@ -473,8 +473,8 @@ class TrainOOTStability:
         dict
             Results with keys:
             - 'train_shap_summary': SHAP statistics on train
-            - 'oot_shap_summary': SHAP statistics on OOT
-            - 'drift_metrics': Metrics comparing train vs OOT
+            - 'holdout_shap_summary': SHAP statistics on holdout
+            - 'drift_metrics': Metrics comparing train vs holdout
             - 'feature_drift': Per-feature drift metrics
             - 'overall_drift_score': Composite drift score
             - 'drift_grade': Letter grade (A-F)
@@ -488,21 +488,21 @@ class TrainOOTStability:
             if feature_names is None:
                 feature_names = [f"feature_{i}" for i in range(X_train.shape[1])]
         
-        if isinstance(X_oot, pd.DataFrame):
-            X_oot = X_oot.values
+        if isinstance(X_holdout, pd.DataFrame):
+            X_holdout = X_holdout.values
         
         if isinstance(y_train, pd.Series):
             y_train = y_train.values
-        if y_oot is not None and isinstance(y_oot, pd.Series):
-            y_oot = y_oot.values
+        if y_holdout is not None and isinstance(y_holdout, pd.Series):
+            y_holdout = y_holdout.values
         
         n_train = len(X_train)
-        n_oot = len(X_oot)
+        n_holdout = len(X_holdout)
         n_features = len(feature_names)
         
-        self._print(f"Train/OOT SHAP Stability Analysis")
+        self._print(f"Train/holdout SHAP Stability Analysis")
         self._print(f"  Train: {n_train} samples")
-        self._print(f"  OOT: {n_oot} samples")
+        self._print(f"  holdout: {n_holdout} samples")
         self._print(f"  Features: {n_features}")
         
         # Train model on train data
@@ -517,28 +517,28 @@ class TrainOOTStability:
             subsample=self.shap_subsample, random_state=self.random_state
         )
         
-        self._print("Computing SHAP values for OOT data...")
-        oot_shap = _compute_shap_values(
-            model, X_oot, self.explainer_type, self.explainer_kwargs,
+        self._print("Computing SHAP values for holdout data...")
+        holdout_shap = _compute_shap_values(
+            model, X_holdout, self.explainer_type, self.explainer_kwargs,
             subsample=self.shap_subsample, random_state=self.random_state + 1000
         )
         
         # Compute SHAP summaries
         train_shap_summary = self._compute_shap_summary(train_shap, feature_names)
-        oot_shap_summary = self._compute_shap_summary(oot_shap, feature_names)
+        holdout_shap_summary = self._compute_shap_summary(holdout_shap, feature_names)
         
         # Compute drift metrics
         self._print("Computing drift metrics...")
-        rank_correlation = compute_shap_rank_correlation(train_shap, oot_shap)
-        direction_flip_rate = compute_direction_flip_rate(train_shap, oot_shap)
-        magnitude_drift = compute_magnitude_drift(train_shap, oot_shap)
-        topk_overlap = compute_topk_overlap(train_shap, oot_shap, k=self.top_k)
+        rank_correlation = compute_shap_rank_correlation(train_shap, holdout_shap)
+        direction_flip_rate = compute_direction_flip_rate(train_shap, holdout_shap)
+        magnitude_drift = compute_magnitude_drift(train_shap, holdout_shap)
+        topk_overlap = compute_topk_overlap(train_shap, holdout_shap, k=self.top_k)
         
         drift_metrics = {
             "rank_correlation": DriftResult(
                 name="rank_correlation",
                 train_value=rank_correlation,
-                oot_value=rank_correlation,  # Same metric
+                holdout_value=rank_correlation,  # Same metric
                 drift=1 - rank_correlation,
                 threshold=0.8,
                 flagged=rank_correlation < 0.8,
@@ -546,7 +546,7 @@ class TrainOOTStability:
             "direction_flip_rate": DriftResult(
                 name="direction_flip_rate",
                 train_value=0.0,  # Not applicable per-period
-                oot_value=direction_flip_rate,
+                holdout_value=direction_flip_rate,
                 drift=direction_flip_rate,
                 threshold=0.15,
                 flagged=direction_flip_rate > 0.15,
@@ -554,7 +554,7 @@ class TrainOOTStability:
             "magnitude_drift": DriftResult(
                 name="magnitude_drift",
                 train_value=0.0,
-                oot_value=magnitude_drift,
+                holdout_value=magnitude_drift,
                 drift=magnitude_drift,
                 threshold=0.30,
                 flagged=magnitude_drift > 0.30,
@@ -562,7 +562,7 @@ class TrainOOTStability:
             "topk_overlap": DriftResult(
                 name="topk_overlap",
                 train_value=1.0,
-                oot_value=topk_overlap,
+                holdout_value=topk_overlap,
                 drift=1 - topk_overlap,
                 threshold=0.7,
                 flagged=topk_overlap < 0.7,
@@ -570,7 +570,7 @@ class TrainOOTStability:
         }
         
         # Compute per-feature drift
-        feature_drift = compute_per_feature_drift(train_shap, oot_shap, feature_names)
+        feature_drift = compute_per_feature_drift(train_shap, holdout_shap, feature_names)
         
         # Compute overall drift score
         overall_drift_score = compute_overall_drift_score(
@@ -600,7 +600,7 @@ class TrainOOTStability:
         results = {
             "meta": {
                 "n_train": n_train,
-                "n_oot": n_oot,
+                "n_holdout": n_holdout,
                 "n_features": n_features,
                 "feature_names": feature_names,
                 "explainer_type": self.explainer_type,
@@ -610,7 +610,7 @@ class TrainOOTStability:
                 "run_timestamp": datetime.utcnow().isoformat(),
             },
             "train_shap_summary": train_shap_summary,
-            "oot_shap_summary": oot_shap_summary,
+            "holdout_shap_summary": holdout_shap_summary,
             "drift_metrics": {k: v.to_dict() for k, v in drift_metrics.items()},
             "feature_drift": feature_drift,
             "overall_drift_score": float(overall_drift_score),
@@ -660,21 +660,21 @@ class TrainOOTStability:
         }
 
 
-def print_oot_report(results: dict) -> None:
+def print_holdout_report(results: dict) -> None:
     """
-    Print a formatted report of train/OOT stability results.
+    Print a formatted report of train/holdout stability results.
     
     Parameters
     ----------
     results : dict
-        Results from TrainOOTStability.fit().
+        Results from TrainHoldoutStability.fit().
     """
     print("\n" + "=" * 80)
-    print("TRAIN/OOT SHAP STABILITY REPORT")
+    print("TRAIN/holdout SHAP STABILITY REPORT")
     print("=" * 80)
     
     meta = results["meta"]
-    print(f"\nDataset: {meta['n_train']} train samples, {meta['n_oot']} OOT samples")
+    print(f"\nDataset: {meta['n_train']} train samples, {meta['n_holdout']} holdout samples")
     print(f"Features: {meta['n_features']}")
     
     print(f"\n{'='*40}")
