@@ -476,6 +476,33 @@ def simple_export_main(output_dir: Optional[Path] = None) -> None:
 # They provide enhanced JSON generation with proper reliability scoring.
 # =============================================================================
 
+def _val(row, col, cast=float):
+    """Return cast(value) or None when cell is NaN/missing."""
+    v = row.get(col)
+    return cast(v) if pd.notna(v) else None
+
+def _fval(row, col):
+    """Return float value or NaN (not None) — for numeric computations."""
+    v = row.get(col)
+    return float(v) if pd.notna(v) else float("nan")
+
+def _meta_full(analysis_type: str, n_features: int, **extra) -> dict:
+    return {
+        "generated_at": datetime.now().isoformat(),
+        "analysis_type": analysis_type,
+        "dataset": "default_of_credit_card_clients",
+        "target": "default payment next month",
+        "n_features": n_features,
+        **extra,
+    }
+
+def _save_json(data: dict, filename: str, output_dir: str) -> None:
+    path = os.path.join(output_dir, filename)
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+    print(f"  Saved: {path}")
+
+
 def load_csv_dataframe(filename: str, output_dir: Optional[str] = None) -> Optional[Any]:
     """
     Load a CSV file from the output directory as a pandas DataFrame.
@@ -501,111 +528,61 @@ def load_csv_dataframe(filename: str, output_dir: Optional[str] = None) -> Optio
 
 
 def generate_stability_results_full(output_dir: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Generate stability_results.json with full metadata.
-    
-    Enhanced version that includes metadata and uses pandas for data processing.
-    
-    Args:
-        output_dir: Directory containing input CSVs and where to save outputs
-    
-    Returns:
-        Dictionary with metadata and feature stability metrics
-    """
+    """Generate stability_results.json with full metadata."""
     if output_dir is None:
         output_dir = "credit_card_analysis_results"
-    
     master_df = load_csv_dataframe("master_comparison.csv", output_dir)
     if master_df is None:
         return {}
-    
-    stability_results = {
-        "metadata": {
-            "generated_at": datetime.now().isoformat(),
-            "analysis_type": "bootstrap_marginal_stability",
-            "dataset": "default_of_credit_card_clients",
-            "target": "default payment next month",
-            "n_features": len(master_df),
-            "n_bootstraps": 100,
-            "sample_fraction": 0.5
-        },
-        "features": {}
-    }
-    
-    for _, row in master_df.iterrows():
-        feature = row['feature']
-        stability_results["features"][feature] = {
-            "complexity_score": float(row['complexity_score']) if pd.notna(row['complexity_score']) else None,
-            "complexity_rank": int(row['complexity_rank']) if pd.notna(row['complexity_rank']) else None,
-            "holdout_complexity_score": float(row['holdout_complexity_score']) if pd.notna(row['holdout_complexity_score']) else None,
-            "holdout_complexity_shift": float(row['holdout_complexity_shift']) if pd.notna(row['holdout_complexity_shift']) else None,
-            "tree_coverage": float(row['tree_coverage']) if pd.notna(row['tree_coverage']) else None,
-            "mean_depth": float(row['mean_depth']) if pd.notna(row['mean_depth']) else None,
-            "stability_interpretation": "stable" if pd.notna(row['complexity_score']) and row['complexity_score'] < 50 else "unstable"
+    out = {"metadata": _meta_full("bootstrap_marginal_stability", len(master_df),
+                                   n_bootstraps=100, sample_fraction=0.5),
+           "features": {}}
+    for _, r in master_df.iterrows():
+        c = _val(r, "complexity_score")
+        out["features"][r["feature"]] = {
+            "complexity_score":          c,
+            "complexity_rank":           _val(r, "complexity_rank", int),
+            "holdout_complexity_score":  _val(r, "holdout_complexity_score"),
+            "holdout_complexity_shift":  _val(r, "holdout_complexity_shift"),
+            "tree_coverage":             _val(r, "tree_coverage"),
+            "mean_depth":                _val(r, "mean_depth"),
+            "stability_interpretation":  "stable" if c is not None and c < 50 else "unstable",
         }
-    
-    return stability_results
+    return out
 
 
 def generate_shap_stability_results_full(output_dir: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Generate shap_stability_results.json with full metadata and comparison data.
-    
-    Enhanced version that includes comparison data from marginal_vs_shap_comparison.csv.
-    
-    Args:
-        output_dir: Directory containing input CSVs and where to save outputs
-    
-    Returns:
-        Dictionary with metadata and feature SHAP stability metrics
-    """
+    """Generate shap_stability_results.json with full metadata and comparison data."""
     if output_dir is None:
         output_dir = "credit_card_analysis_results"
-    
     master_df = load_csv_dataframe("master_comparison.csv", output_dir)
     comparison_df = load_csv_dataframe("marginal_vs_shap_comparison.csv", output_dir)
-    
     if master_df is None:
         return {}
-    
-    shap_stability_results = {
-        "metadata": {
-            "generated_at": datetime.now().isoformat(),
-            "analysis_type": "shap_stability",
-            "dataset": "default_of_credit_card_clients",
-            "target": "default payment next month",
-            "n_features": len(master_df)
-        },
-        "features": {}
-    }
-    
-    for _, row in master_df.iterrows():
-        feature = row['feature']
-        shap_stability_results["features"][feature] = {
-            "shap_importance_norm": float(row['shap_importance_norm']) if pd.notna(row['shap_importance_norm']) else None,
-            "shap_rank": int(row['shap_rank']) if pd.notna(row['shap_rank']) else None,
-            "shap_cv": float(row['shap_cv']) if pd.notna(row['shap_cv']) else None,
-            "shap_total_interaction": float(row['shap_total_interaction']) if pd.notna(row['shap_total_interaction']) else None,
-            "shap_skewness": float(row['shap_skewness']) if pd.notna(row['shap_skewness']) else None,
-            "shap_kurtosis": float(row['shap_kurtosis']) if pd.notna(row['shap_kurtosis']) else None,
-            "shap_bimodality_flag": bool(row['shap_bimodality_flag']) if pd.notna(row['shap_bimodality_flag']) else None,
-            "cross_seed_mean_rank": float(row['cross_seed_mean_rank']) if pd.notna(row['cross_seed_mean_rank']) else None,
-            "cross_seed_std_rank": float(row['cross_seed_std_rank']) if pd.notna(row['cross_seed_std_rank']) else None
+    out = {"metadata": _meta_full("shap_stability", len(master_df)), "features": {}}
+    for _, r in master_df.iterrows():
+        out["features"][r["feature"]] = {
+            "shap_importance_norm":   _val(r, "shap_importance_norm"),
+            "shap_rank":              _val(r, "shap_rank", int),
+            "shap_cv":                _val(r, "shap_cv"),
+            "shap_total_interaction": _val(r, "shap_total_interaction"),
+            "shap_skewness":          _val(r, "shap_skewness"),
+            "shap_kurtosis":          _val(r, "shap_kurtosis"),
+            "shap_bimodality_flag":   _val(r, "shap_bimodality_flag", bool),
+            "cross_seed_mean_rank":   _val(r, "cross_seed_mean_rank"),
+            "cross_seed_std_rank":    _val(r, "cross_seed_std_rank"),
         }
-    
-    # Add comparison data if available
     if comparison_df is not None:
-        for _, row in comparison_df.iterrows():
-            feature = row['feature']
-            if feature in shap_stability_results["features"]:
-                shap_stability_results["features"][feature].update({
-                    "shap_complexity": float(row['shap_complexity']) if pd.notna(row['shap_complexity']) else None,
-                    "holdout_drift_score": float(row['holdout_drift_score']) if pd.notna(row['holdout_drift_score']) else None,
-                    "direction_consistent": bool(row['direction_consistent']) if pd.notna(row['direction_consistent']) else None,
-                    "classification": row['classification'] if pd.notna(row['classification']) else None
+        for _, r in comparison_df.iterrows():
+            feat = r["feature"]
+            if feat in out["features"]:
+                out["features"][feat].update({
+                    "shap_complexity":      _val(r, "shap_complexity"),
+                    "holdout_drift_score":  _val(r, "holdout_drift_score"),
+                    "direction_consistent": _val(r, "direction_consistent", bool),
+                    "classification":       r["classification"] if pd.notna(r["classification"]) else None,
                 })
-    
-    return shap_stability_results
+    return out
 
 
 def generate_reliability_results_full(output_dir: Optional[str] = None) -> Dict[str, Any]:
@@ -976,65 +953,25 @@ def full_export_main(output_dir: Optional[str] = None) -> None:
     
     print("Generating JSON output files from analysis results...")
     
-    # Load master data to verify it exists
     master_df = load_csv_dataframe("master_comparison.csv", output_dir)
-    
     if master_df is None:
         print("ERROR: master_comparison.csv not found. Run comprehensive_feature_analysis.py first.")
         return
-    
-    # ==========================================================================
-    # 1. Stability Results
-    # ==========================================================================
-    stability_results = generate_stability_results_full(output_dir)
-    stability_path = os.path.join(output_dir, "stability_results.json")
-    with open(stability_path, 'w') as f:
-        json.dump(stability_results, f, indent=2)
-    print(f"  Saved: {stability_path}")
-    
-    # ==========================================================================
-    # 2. SHAP Stability Results
-    # ==========================================================================
-    shap_stability_results = generate_shap_stability_results_full(output_dir)
-    shap_path = os.path.join(output_dir, "shap_stability_results.json")
-    with open(shap_path, 'w') as f:
-        json.dump(shap_stability_results, f, indent=2)
-    print(f"  Saved: {shap_path}")
-    
-    # ==========================================================================
-    # 3. Reliability Results
-    # ==========================================================================
-    reliability_results = generate_reliability_results_full(output_dir)
-    reliability_path = os.path.join(output_dir, "reliability_results.json")
-    with open(reliability_path, 'w') as f:
-        json.dump(reliability_results, f, indent=2)
-    print(f"  Saved: {reliability_path}")
-    
-    # ==========================================================================
-    # 4. Meta-Bootstrap Results
-    # ==========================================================================
-    meta_bootstrap_results = generate_meta_bootstrap_results_full(output_dir)
-    meta_path = os.path.join(output_dir, "meta_bootstrap_results.json")
-    with open(meta_path, 'w') as f:
-        json.dump(meta_bootstrap_results, f, indent=2)
-    print(f"  Saved: {meta_path}")
-    
-    # ==========================================================================
-    # 5. Master Table CSV
-    # ==========================================================================
-    master_csv_path = os.path.join(output_dir, "master_table.csv")
-    master_df.to_csv(master_csv_path, index=False)
-    print(f"  Saved: {master_csv_path}")
-    
-    # ==========================================================================
-    # 6. Summary Report
-    # ==========================================================================
-    summary = generate_summary_report_full(output_dir)
-    summary_md_path = os.path.join(output_dir, "summary_report.md")
-    with open(summary_md_path, 'w') as f:
-        f.write(summary)
-    print(f"  Saved: {summary_md_path}")
-    
+
+    _save_json(generate_stability_results_full(output_dir),      "stability_results.json",      output_dir)
+    _save_json(generate_shap_stability_results_full(output_dir), "shap_stability_results.json", output_dir)
+    _save_json(generate_reliability_results_full(output_dir),    "reliability_results.json",    output_dir)
+    _save_json(generate_meta_bootstrap_results_full(output_dir), "meta_bootstrap_results.json", output_dir)
+
+    master_csv = os.path.join(output_dir, "master_table.csv")
+    master_df.to_csv(master_csv, index=False)
+    print(f"  Saved: {master_csv}")
+
+    md_path = os.path.join(output_dir, "summary_report.md")
+    with open(md_path, "w") as f:
+        f.write(generate_summary_report_full(output_dir))
+    print(f"  Saved: {md_path}")
+
     print("\n✓ All JSON output files generated successfully!")
 
 
