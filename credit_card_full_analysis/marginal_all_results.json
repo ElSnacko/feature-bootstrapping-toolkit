@@ -1,0 +1,462 @@
+{
+  "LIMIT_BAL": {
+    "complexity_score": -0.0023365975144750374,
+    "complexity_scores": {
+      "overall": -0.0023365975144750374,
+      "target_agnostic": -0.0023365975144750374,
+      "target_dependent": null
+    },
+    "per_metric_floors": {
+      "wasserstein": -0.0046554604201716554,
+      "ks": -0.002922211276475597,
+      "js": 0.002540092230179547,
+      "spearman": 0.17235940837075558,
+      "iv": 0.1263355930292454,
+      "monotonicity": 0.021723414795429073
+    },
+    "censoring_flag": false,
+    "censoring_detail": "none",
+    "feature_type": "continuous",
+    "n_obs": 30000
+  },
+  "SEX": {
+    "complexity_score": 6.430954043087542e-05,
+    "complexity_scores": {
+      "overall": 6.430954043087542e-05,
+      "target_agnostic": 6.430954043087542e-05,
+      "target_dependent": null
+    },
+    "per_metric_floors": {
+      "wasserstein": 7.112829779894886e-05,
+      "ks": 7.921715737984475e-05,
+      "js": 3.4146636829580045e-05,
+      "spearman": 0.034781135643228385,
+      "iv": -0.03466855992217903,
+      "monotonicity": 1.010534826637699
+    },
+    "censoring_flag": true,
+    "censoring_detail": "lower boundary spike; upper boundary spike",
+    "feature_type": "binary",
+    "n_obs": 30000
+  },
+  "EDUCATION": {
+    "complexity_score": 0.0004271663457728157,
+    "complexity_scores": {
+      "overall": 0.0004271663457728157,
+      "target_agnostic": 0.0004271663457728157,
+      "target_dependent": null
+    },
+    "per_metric_floors": {
+      "wasserstein": 6.633470083958768e-05,
+      "ks": -0.000489714930854427,
+      "js": 0.0021769208386053173,
+      "spearman": 0.04261209276585662,
+      "iv": 0.015314637877946,
+      "monotonicity": 0.9999999988119899
+    },
+    "censoring_flag": false,
+    "censoring_detail": "none",
+    "feature_type": "categorical",
+    "n_obs": 30000
+  },
+  "MARRIAGE": {
+    "complexity_score": -0.0015995551757218048,
+    "complexity_scores": {
+      "overall": -0.0015995551757218048,
+      "target_agnostic": 0.002167157313740161,
+      "target_dependent": -0.009132980154645736
+    },
+    "per_metric_floors": {
+      "wasserstein": 0.0019754093779397043,
+      "ks": 0.0028777311269082948,
+      "js": 0.0016596150223792232,
+      "spearman": 0.0002503072975522467,
+      "iv": -0.0310273175431077,
+      "monotonicity": 0.9999999988119899
+    },
+    "censoring_flag": false,
+    "censoring_detail": "none",
+    "feature_type": "categorical",
+    "n_obs": 30000
+  },
+  "AGE": {
+    "complexity_score": -0.00167945423461838,
+    "complexity_scores": {
+      "overall": -0.00167945423461838,
+      "target_agnostic": -0.0012834328962858927,
+      "target_dependent": -0.0024714969112833544
+    },
+    "per_metric_floors": {
+      "wasserstein": -0.0033256400482377354,
+      "ks": -0.0014066991418124116,
+      "js": 0.002540459471859247,
+      "spearman": 0.005547469377560059,
+      "iv": -0.021182418251917984,
+      "monotonicity": 0.9998064981211098
+    },
+    "censoring_flag": false,
+    "censoring_detail": "none",
+    "feature_type": "continuous",
+    "n_obs": 30000
+  },
+  "PAY_0": {
+    "complexity_score": -0.0003750300476855743,
+    "complexity_scores": {
+      "overall": -0.0003750300476855743,
+      "target_agnostic": -0.0003750300476855743,
+      "target_dependent": null
+    },
+    "per_metric_floors": {
+      "wasserstein": -0.0017635887629853502,
+      "ks": -0.0005070770736378128,
+      "js": 0.0022828320709967088,
+      "spearman": 0.31232277788634,
+      "iv": 0.7793912750106455,
+      "monotonicity": 1.0386918248550634
+    },
+    "censoring_flag": false,
+    "censoring_detail": "none",
+    "feature_type": "continuous",
+    "n_obs": 30000
+  },
+  "PAY_2": {
+    "complexity_score": 0.0033789139614989,
+    "complexity_scores": {
+      "overall": 0.0033789139614989,
+      "target_agnostic": 0.0033789139614989,
+      "target_dependent": null
+    },
+    "per_metric_floors": {
+      "wasserstein": 0.0028752418911320507,
+      "ks": 0.0014281144490675632,
+      "js": 0.0066264831030768325,
+      "spearman": 0.23074356609962984,
+      "iv": 0.03482256785551684,
+      "monotonicity": 0.9688684190704181
+    },
+    "censoring_flag": true,
+    "censoring_detail": "lower boundary spike",
+    "feature_type": "continuous",
+    "n_obs": 30000
+  },
+  "PAY_3": {
+    "complexity_score": 5.491003330158027e-05,
+    "complexity_scores": {
+      "overall": 5.491003330158027e-05,
+      "target_agnostic": 5.491003330158027e-05,
+      "target_dependent": null
+    },
+    "per_metric_floors": {
+      "wasserstein": -0.0029785355439899148,
+      "ks": 0.00018612168589093045,
+      "js": 0.005357658089319052,
+      "spearman": 0.20347098604826788,
+      "iv": 0.04593596059107515,
+      "monotonicity": 0.961360664104674
+    },
+    "censoring_flag": true,
+    "censoring_detail": "lower boundary spike",
+    "feature_type": "continuous",
+    "n_obs": 30000
+  },
+  "PAY_4": {
+    "complexity_score": 0.002585767137519487,
+    "complexity_scores": {
+      "overall": 0.002585767137519487,
+      "target_agnostic": 0.002585767137519487,
+      "target_dependent": null
+    },
+    "per_metric_floors": {
+      "wasserstein": 0.0013737135643398252,
+      "ks": 0.0016290029272866282,
+      "js": 0.005915580621522308,
+      "spearman": 0.18123311914466986,
+      "iv": 0.02878034338449943,
+      "monotonicity": 0.9232448699372641
+    },
+    "censoring_flag": true,
+    "censoring_detail": "lower boundary spike",
+    "feature_type": "continuous",
+    "n_obs": 30000
+  },
+  "PAY_5": {
+    "complexity_score": -0.0015257579330102246,
+    "complexity_scores": {
+      "overall": -0.0015257579330102246,
+      "target_agnostic": -0.0015257579330102246,
+      "target_dependent": null
+    },
+    "per_metric_floors": {
+      "wasserstein": -0.003382731943249777,
+      "ks": -0.0006349535850566084,
+      "js": 0.0007478300678766302,
+      "spearman": 0.1727595184355725,
+      "iv": 0.4052507202752246,
+      "monotonicity": 0.9999999988119899
+    },
+    "censoring_flag": true,
+    "censoring_detail": "lower boundary spike",
+    "feature_type": "categorical",
+    "n_obs": 30000
+  },
+  "PAY_6": {
+    "complexity_score": 0.0021874817271127127,
+    "complexity_scores": {
+      "overall": 0.0021874817271127127,
+      "target_agnostic": 0.0021874817271127127,
+      "target_dependent": null
+    },
+    "per_metric_floors": {
+      "wasserstein": 0.0008842403039667555,
+      "ks": 0.0015167491390835183,
+      "js": 0.005338195394410468,
+      "spearman": 0.15152298100337414,
+      "iv": 0.31272529001398425,
+      "monotonicity": 0.9999999988119899
+    },
+    "censoring_flag": true,
+    "censoring_detail": "lower boundary spike",
+    "feature_type": "categorical",
+    "n_obs": 30000
+  },
+  "BILL_AMT1": {
+    "complexity_score": -0.005523072247059178,
+    "complexity_scores": {
+      "overall": -0.005523072247059178,
+      "target_agnostic": 0.0009777911270649428,
+      "target_dependent": -0.04886216140788665
+    },
+    "per_metric_floors": {
+      "wasserstein": -0.0015990029449580133,
+      "ks": 0.0005766251711885112,
+      "js": 0.006097419603757982,
+      "spearman": 0.014721647038836522,
+      "iv": -0.04886216140788665,
+      "monotonicity": 1.00981417995323
+    },
+    "censoring_flag": false,
+    "censoring_detail": "none",
+    "feature_type": "continuous",
+    "n_obs": 30000
+  },
+  "BILL_AMT2": {
+    "complexity_score": -0.003234138515315738,
+    "complexity_scores": {
+      "overall": -0.003234138515315738,
+      "target_agnostic": 0.0019505922497236171,
+      "target_dependent": -0.03779901028224477
+    },
+    "per_metric_floors": {
+      "wasserstein": -0.0007861314875754651,
+      "ks": 0.0015406658797945689,
+      "js": 0.007368606620776823,
+      "spearman": 0.009630336652233524,
+      "iv": -0.03779901028224477,
+      "monotonicity": 1.0015868998760347
+    },
+    "censoring_flag": false,
+    "censoring_detail": "none",
+    "feature_type": "continuous",
+    "n_obs": 30000
+  },
+  "BILL_AMT3": {
+    "complexity_score": -0.0023191356116773146,
+    "complexity_scores": {
+      "overall": -0.0023191356116773146,
+      "target_agnostic": 0.0011634946954412987,
+      "target_dependent": -0.02553667099246807
+    },
+    "per_metric_floors": {
+      "wasserstein": -0.002887598253265551,
+      "ks": 0.0009137154394602944,
+      "js": 0.008755197110290833,
+      "spearman": 0.009620490165070347,
+      "iv": -0.02553667099246807,
+      "monotonicity": 1.0035533228840559
+    },
+    "censoring_flag": false,
+    "censoring_detail": "none",
+    "feature_type": "continuous",
+    "n_obs": 30000
+  },
+  "BILL_AMT4": {
+    "complexity_score": -0.0036559736138675296,
+    "complexity_scores": {
+      "overall": -0.0036559736138675296,
+      "target_agnostic": -0.0016375306882178082,
+      "target_dependent": -0.017112259784865674
+    },
+    "per_metric_floors": {
+      "wasserstein": -0.00831815002244023,
+      "ks": 0.0008158685631350521,
+      "js": 0.007443505011759119,
+      "spearman": 0.010257774279917501,
+      "iv": -0.017112259784865674,
+      "monotonicity": 0.9999036699945603
+    },
+    "censoring_flag": false,
+    "censoring_detail": "none",
+    "feature_type": "continuous",
+    "n_obs": 30000
+  },
+  "BILL_AMT5": {
+    "complexity_score": 0.0005403751508525628,
+    "complexity_scores": {
+      "overall": 0.0005403751508525628,
+      "target_agnostic": 0.0003090873130270366,
+      "target_dependent": 0.0010029508265036154
+    },
+    "per_metric_floors": {
+      "wasserstein": -0.00516054046922996,
+      "ks": 0.0016374599145080014,
+      "js": 0.008560370199312474,
+      "spearman": 0.008337365466350754,
+      "iv": -0.016110683333139707,
+      "monotonicity": 1.0043467748639052
+    },
+    "censoring_flag": false,
+    "censoring_detail": "none",
+    "feature_type": "continuous",
+    "n_obs": 30000
+  },
+  "BILL_AMT6": {
+    "complexity_score": -0.0012038029027818219,
+    "complexity_scores": {
+      "overall": -0.0012038029027818219,
+      "target_agnostic": 0.001216767873584457,
+      "target_dependent": -0.00604494445551438
+    },
+    "per_metric_floors": {
+      "wasserstein": -0.003320408270706409,
+      "ks": 0.001011513843420359,
+      "js": 0.009629989769504934,
+      "spearman": 0.006584561761403979,
+      "iv": -0.03551379229499055,
+      "monotonicity": 1.005849167459002
+    },
+    "censoring_flag": false,
+    "censoring_detail": "none",
+    "feature_type": "continuous",
+    "n_obs": 30000
+  },
+  "PAY_AMT1": {
+    "complexity_score": -0.006092891022193548,
+    "complexity_scores": {
+      "overall": -0.006092891022193548,
+      "target_agnostic": -0.006092891022193548,
+      "target_dependent": null
+    },
+    "per_metric_floors": {
+      "wasserstein": -0.03212635979257289,
+      "ks": 0.0029706303402281574,
+      "js": 0.029891127129583226,
+      "spearman": 0.15092458442596157,
+      "iv": 0.08940698088499396,
+      "monotonicity": 0.31533957175714633
+    },
+    "censoring_flag": true,
+    "censoring_detail": "lower boundary spike",
+    "feature_type": "continuous",
+    "n_obs": 30000
+  },
+  "PAY_AMT2": {
+    "complexity_score": 0.013451655347550374,
+    "complexity_scores": {
+      "overall": 0.013451655347550374,
+      "target_agnostic": 0.013451655347550374,
+      "target_dependent": null
+    },
+    "per_metric_floors": {
+      "wasserstein": 0.1561560870463984,
+      "ks": -0.000665094257974742,
+      "js": 0.030391754874180513,
+      "spearman": 0.15700428759823454,
+      "iv": 0.1108515907588902,
+      "monotonicity": 0.16911141462942292
+    },
+    "censoring_flag": true,
+    "censoring_detail": "lower boundary spike",
+    "feature_type": "continuous",
+    "n_obs": 30000
+  },
+  "PAY_AMT3": {
+    "complexity_score": 0.01625550210234711,
+    "complexity_scores": {
+      "overall": 0.01625550210234711,
+      "target_agnostic": 0.01625550210234711,
+      "target_dependent": null
+    },
+    "per_metric_floors": {
+      "wasserstein": 0.060174111106977596,
+      "ks": 0.0008016922489030645,
+      "js": 0.03480007392647997,
+      "spearman": 0.14052014298247884,
+      "iv": 0.07673419812373602,
+      "monotonicity": 0.1343497369954862
+    },
+    "censoring_flag": true,
+    "censoring_detail": "lower boundary spike",
+    "feature_type": "continuous",
+    "n_obs": 30000
+  },
+  "PAY_AMT4": {
+    "complexity_score": 0.02648093121965851,
+    "complexity_scores": {
+      "overall": 0.02648093121965851,
+      "target_agnostic": 0.02573679303811475,
+      "target_dependent": 0.02945748394583355
+    },
+    "per_metric_floors": {
+      "wasserstein": 0.03701077318065585,
+      "ks": 0.00028333574583418316,
+      "js": 0.03598777753227744,
+      "spearman": 0.14059889439446202,
+      "iv": 0.07218318072460157,
+      "monotonicity": 0.02945748394583355
+    },
+    "censoring_flag": true,
+    "censoring_detail": "lower boundary spike",
+    "feature_type": "continuous",
+    "n_obs": 30000
+  },
+  "PAY_AMT5": {
+    "complexity_score": 0.0034540711413436533,
+    "complexity_scores": {
+      "overall": 0.0034540711413436533,
+      "target_agnostic": -0.0022526575574872594,
+      "target_dependent": 0.04149892913354974
+    },
+    "per_metric_floors": {
+      "wasserstein": -0.02051124260696145,
+      "ks": -0.003283820073814858,
+      "js": 0.0318501905511594,
+      "spearman": 0.11102514070643962,
+      "iv": 0.04149892913354974,
+      "monotonicity": 0.06665496657818927
+    },
+    "censoring_flag": true,
+    "censoring_detail": "lower boundary spike",
+    "feature_type": "continuous",
+    "n_obs": 30000
+  },
+  "PAY_AMT6": {
+    "complexity_score": 0.01158927926834596,
+    "complexity_scores": {
+      "overall": 0.01158927926834596,
+      "target_agnostic": 0.017007150214264657,
+      "target_dependent": -0.0003300368126751775
+    },
+    "per_metric_floors": {
+      "wasserstein": 0.02421755018558145,
+      "ks": 0.0003639868118746935,
+      "js": 0.036978946297132616,
+      "spearman": 0.12538287668076595,
+      "iv": 0.06758611714531068,
+      "monotonicity": -0.0003300368126751775
+    },
+    "censoring_flag": true,
+    "censoring_detail": "lower boundary spike",
+    "feature_type": "continuous",
+    "n_obs": 30000
+  }
+}

@@ -345,16 +345,25 @@ class MetricRunner:
         self.ref_kde = _kde_pdf(self.eval_grid, x_full, self.bandwidth)
         self.x_ref = x_full
 
+        # Scale factor for normalizing Wasserstein distance to a relative metric.
+        # Use IQR (robust to outliers); fall back to range, then 1.0 for constants.
+        iqr = float(np.percentile(x_full, 75) - np.percentile(x_full, 25))
+        if iqr > 0:
+            self._wasserstein_scale = iqr
+        else:
+            rng = float(x_full.max() - x_full.min())
+            self._wasserstein_scale = rng if rng > 0 else 1.0
+
     def __call__(self, x_boot, y_boot) -> dict:
         x_boot = np.asarray(x_boot, dtype=float)
 
         boot_kde = _kde_pdf(self.eval_grid, x_boot, self.bandwidth)
 
-        # Wasserstein distance
+        # Wasserstein distance (normalized by IQR to be scale-invariant)
         wasserstein = float(stats.wasserstein_distance(
             self.eval_grid, self.eval_grid,
             u_weights=self.ref_kde, v_weights=boot_kde
-        ))
+        )) / self._wasserstein_scale
 
         # KS statistic
         ks_stat, _ = stats.ks_2samp(self.x_ref, x_boot)

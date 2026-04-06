@@ -1,0 +1,405 @@
+{
+  "complexity_score": 0.41972149443545914,
+  "complexity_scores": {
+    "overall": 0.41972149443545914,
+    "target_agnostic": null,
+    "target_dependent": 0.41972149443545914
+  },
+  "per_metric_floors": {
+    "rank_stability_global": -0.0027099657485348755,
+    "rank_stability": 0.020457536462453213,
+    "wasserstein": 0.007339160959616625,
+    "js_divergence": 0.00021303521278348905,
+    "direction_consistency": 0.40929797752862496,
+    "magnitude_cv": -0.007865804144423146,
+    "magnitude_iqr": -0.011001956799487228,
+    "topk_overlap": -0.08513280619361106
+  },
+  "learning_curve_fits": {
+    "rank_stability_global": {
+      "k": 0.4148109665744892,
+      "floor": -0.0027099657485348755,
+      "alpha": 0.5,
+      "alpha_estimated": false,
+      "r2": 0.8300562903073595,
+      "r2_improvement": null,
+      "anomalous": false,
+      "fit_failed": false,
+      "extrapolations": {
+        "500": 0.015840944632924143,
+        "1000": 0.01040750877937872
+      }
+    },
+    "rank_stability": {
+      "k": 1.9032887186682281,
+      "floor": 0.020457536462453213,
+      "alpha": 0.5,
+      "alpha_estimated": false,
+      "r2": 0.7670339139923201,
+      "r2_improvement": null,
+      "anomalous": false,
+      "fit_failed": false,
+      "extrapolations": {
+        "500": 0.10557519557746584,
+        "1000": 0.08064481042140359
+      }
+    },
+    "wasserstein": {
+      "k": 0.2690573106044337,
+      "floor": 0.007339160959616625,
+      "alpha": 0.5,
+      "alpha_estimated": false,
+      "r2": 0.9825215676577176,
+      "r2_improvement": null,
+      "anomalous": false,
+      "fit_failed": false,
+      "extrapolations": {
+        "500": 0.0193717696867124,
+        "1000": 0.015847500185910482
+      }
+    },
+    "js_divergence": {
+      "k": 0.7363771217289742,
+      "floor": 0.00021303521278348905,
+      "alpha": 0.5,
+      "alpha_estimated": false,
+      "r2": 0.9889190465019574,
+      "r2_improvement": null,
+      "anomalous": false,
+      "fit_failed": false,
+      "extrapolations": {
+        "500": 0.03314482123801596,
+        "1000": 0.02349932442780975
+      }
+    },
+    "direction_consistency": {
+      "k": 0.057466884584235205,
+      "floor": 0.40929797752862496,
+      "alpha": 0.5,
+      "alpha_estimated": false,
+      "r2": 0.07351220200912745,
+      "r2_improvement": null,
+      "anomalous": true,
+      "fit_failed": false,
+      "extrapolations": {
+        "500": 0.41186797473633463,
+        "1000": 0.411115239981827
+      }
+    },
+    "magnitude_cv": {
+      "k": 1.7590245566446443,
+      "floor": -0.007865804144423146,
+      "alpha": 0.5,
+      "alpha_estimated": false,
+      "r2": 0.9744648550179544,
+      "r2_improvement": null,
+      "anomalous": false,
+      "fit_failed": false,
+      "extrapolations": {
+        "500": 0.07080016551055393,
+        "1000": 0.04775943644722632
+      }
+    },
+    "magnitude_iqr": {
+      "k": 2.2220102621186992,
+      "floor": -0.011001956799487228,
+      "alpha": 0.5,
+      "alpha_estimated": false,
+      "r2": 0.984701543795004,
+      "r2_improvement": null,
+      "anomalous": false,
+      "fit_failed": false,
+      "extrapolations": {
+        "500": 0.0883693630565035,
+        "1000": 0.05926417732614125
+      }
+    },
+    "topk_overlap": {
+      "k": 3.968321552269919,
+      "floor": -0.08513280619361106,
+      "alpha": 0.5,
+      "alpha_estimated": false,
+      "r2": 0.8656097622231101,
+      "r2_improvement": null,
+      "anomalous": false,
+      "fit_failed": false,
+      "extrapolations": {
+        "500": 0.0923359287554494,
+        "1000": 0.04035653973746765
+      }
+    }
+  },
+  "panel_summary": [
+    {
+      "feature": "PAY_2",
+      "complexity_score": 0.1142870192118571,
+      "direction_consistency": 0.6732862078867143,
+      "rank_stability": 0.97588583880163,
+      "wasserstein": 0.004102836353980472,
+      "magnitude_cv": 0.04260704600497223
+    },
+    {
+      "feature": "BILL_AMT5",
+      "complexity_score": 0.11912195838079712,
+      "direction_consistency": 0.6635165148194331,
+      "rank_stability": 0.968575810440818,
+      "wasserstein": 0.008873943003089342,
+      "magnitude_cv": 0.03278674381385448
+    },
+    {
+      "feature": "PAY_AMT1",
+      "complexity_score": 0.14150949581543648,
+      "direction_consistency": 0.632603110625465,
+      "rank_stability": 0.9261201882273647,
+      "wasserstein": 0.019826707152735375,
+      "magnitude_cv": 0.026441920324184402
+    },
+    {
+      "feature": "PAY_0",
+      "complexity_score": 0.1457273432545794,
+      "direction_consistency": 0.6256155931251792,
+      "rank_stability": 0.937466670905737,
+      "wasserstein": 0.03837972438527626,
+      "magnitude_cv": 0.04601923233553049
+    },
+    {
+      "feature": "EDUCATION",
+      "complexity_score": 0.14163717326988567,
+      "direction_consistency": 0.6064715384644208,
+      "rank_stability": 0.97588583880163,
+      "wasserstein": 0.005172923554934833,
+      "magnitude_cv": 0.09493935066681303
+    },
+    {
+      "feature": "PAY_6",
+      "complexity_score": 0.13163362692058458,
+      "direction_consistency": 0.6036694750401463,
+      "rank_stability": 0.9952413313273321,
+      "wasserstein": 0.008982776946445456,
+      "magnitude_cv": 0.050096409862208355
+    },
+    {
+      "feature": "BILL_AMT4",
+      "complexity_score": 0.17132890192742045,
+      "direction_consistency": 0.6012263226815864,
+      "rank_stability": 0.8583579970464306,
+      "wasserstein": 0.01409068293613892,
+      "magnitude_cv": 0.03450172903698646
+    },
+    {
+      "feature": "BILL_AMT6",
+      "complexity_score": 0.1673872510485901,
+      "direction_consistency": 0.6001837546144063,
+      "rank_stability": 0.8708863664421835,
+      "wasserstein": 0.011117076101045478,
+      "magnitude_cv": 0.03285795552744638
+    },
+    {
+      "feature": "BILL_AMT2",
+      "complexity_score": 0.15744170218858736,
+      "direction_consistency": 0.591287153359924,
+      "rank_stability": 0.91923223456986,
+      "wasserstein": 0.016576887569885977,
+      "magnitude_cv": 0.035362161691712246
+    },
+    {
+      "feature": "LIMIT_BAL",
+      "complexity_score": 0.17614687092921846,
+      "direction_consistency": 0.5888785072294482,
+      "rank_stability": 0.8558348921802201,
+      "wasserstein": 0.013855567298581534,
+      "magnitude_cv": 0.03366340461899517
+    },
+    {
+      "feature": "PAY_AMT2",
+      "complexity_score": 0.1536807025602141,
+      "direction_consistency": 0.5873390600594532,
+      "rank_stability": 0.937466670905737,
+      "wasserstein": 0.036027007158383945,
+      "magnitude_cv": 0.022385100873621677
+    },
+    {
+      "feature": "PAY_AMT6",
+      "complexity_score": 0.15998073491525633,
+      "direction_consistency": 0.5861135801511768,
+      "rank_stability": 0.9128106111864607,
+      "wasserstein": 0.01132470013388144,
+      "magnitude_cv": 0.038083024620186146
+    },
+    {
+      "feature": "PAY_AMT5",
+      "complexity_score": 0.18575287919543285,
+      "direction_consistency": 0.5821249848362369,
+      "rank_stability": 0.839859172617343,
+      "wasserstein": 0.01832680335063013,
+      "magnitude_cv": 0.05097989018934869
+    },
+    {
+      "feature": "AGE",
+      "complexity_score": 0.18076677593308194,
+      "direction_consistency": 0.5786525370724259,
+      "rank_stability": 0.8509086492538874,
+      "wasserstein": 0.011834405752294067,
+      "magnitude_cv": 0.03837296994725509
+    },
+    {
+      "feature": "BILL_AMT1",
+      "complexity_score": 0.17962557529105427,
+      "direction_consistency": 0.5780406168339494,
+      "rank_stability": 0.8574487353807314,
+      "wasserstein": 0.019227061215693786,
+      "magnitude_cv": 0.03304248388556304
+    },
+    {
+      "feature": "SEX",
+      "complexity_score": 0.1386755005991345,
+      "direction_consistency": 0.5719193106409541,
+      "rank_stability": 1.0,
+      "wasserstein": 0.001951057719447315,
+      "magnitude_cv": 0.05300967729595697
+    },
+    {
+      "feature": "BILL_AMT3",
+      "complexity_score": 0.16365248406579758,
+      "direction_consistency": 0.5699460572662305,
+      "rank_stability": 0.9261201882273647,
+      "wasserstein": 0.03646422965841391,
+      "magnitude_cv": 0.03270343100719093
+    },
+    {
+      "feature": "MARRIAGE",
+      "complexity_score": 0.13861367522386894,
+      "direction_consistency": 0.5694992059999779,
+      "rank_stability": 0.9952413313273321,
+      "wasserstein": 0.001965563230515857,
+      "magnitude_cv": 0.03637791736495561
+    },
+    {
+      "feature": "PAY_AMT4",
+      "complexity_score": 0.14470891235890407,
+      "direction_consistency": 0.5688983878083284,
+      "rank_stability": 0.9822713867747241,
+      "wasserstein": 0.020598339001949448,
+      "magnitude_cv": 0.03172617392788096
+    },
+    {
+      "feature": "PAY_4",
+      "complexity_score": 0.20129439451928988,
+      "direction_consistency": 0.562854147941418,
+      "rank_stability": 0.8073409287987824,
+      "wasserstein": 0.01643993367539731,
+      "magnitude_cv": 0.05317024937194752
+    },
+    {
+      "feature": "PAY_AMT3",
+      "complexity_score": 0.14964856712609312,
+      "direction_consistency": 0.5585822389758444,
+      "rank_stability": 0.9803201411628552,
+      "wasserstein": 0.020136330043628563,
+      "magnitude_cv": 0.03942322439592892
+    },
+    {
+      "feature": "PAY_5",
+      "complexity_score": 0.16845596504833377,
+      "direction_consistency": 0.5398639390475923,
+      "rank_stability": 0.9424134723053631,
+      "wasserstein": 0.005101343729589866,
+      "magnitude_cv": 0.06900891879320559
+    },
+    {
+      "feature": "PAY_3",
+      "complexity_score": 0.17926674999350886,
+      "direction_consistency": 0.5071257823572831,
+      "rank_stability": 0.9403839181682663,
+      "wasserstein": 0.008438863970748927,
+      "magnitude_cv": 0.06841115964393849
+    }
+  ],
+  "feature_results_sample": [
+    {
+      "feature": "LIMIT_BAL",
+      "rank_stability_global_mean": 0.9906433904259991,
+      "rank_stability_global_std": 0.0033881944475602404,
+      "rank_stability_mean": 0.8558348921802201,
+      "rank_stability_std": 0.038808996934416015,
+      "wasserstein_mean": 0.013855567298581534,
+      "wasserstein_std": 0.0021222444045625403,
+      "js_divergence_mean": 0.02433044964482451,
+      "js_divergence_std": 0.0068964200523500855,
+      "direction_consistency_mean": 0.5888785072294482,
+      "direction_consistency_std": 0.00582506676212914,
+      "magnitude_cv_mean": 0.03366340461899517,
+      "magnitude_cv_std": 0.011405161399932218,
+      "magnitude_iqr_mean": 0.04543829420344202,
+      "magnitude_iqr_std": 0.01879161897296376
+    },
+    {
+      "feature": "SEX",
+      "rank_stability_global_mean": 0.9906433904259991,
+      "rank_stability_global_std": 0.0033881944475602404,
+      "rank_stability_mean": 1.0,
+      "rank_stability_std": 0.0,
+      "wasserstein_mean": 0.001951057719447315,
+      "wasserstein_std": 0.00022408679858393704,
+      "js_divergence_mean": 0.02007183539110103,
+      "js_divergence_std": 0.005976826661982463,
+      "direction_consistency_mean": 0.5719193106409541,
+      "direction_consistency_std": 0.0032660314214039182,
+      "magnitude_cv_mean": 0.05300967729595697,
+      "magnitude_cv_std": 0.016894808221557152,
+      "magnitude_iqr_mean": 0.06615010195162074,
+      "magnitude_iqr_std": 0.02862557290884036
+    },
+    {
+      "feature": "EDUCATION",
+      "rank_stability_global_mean": 0.9906433904259991,
+      "rank_stability_global_std": 0.0033881944475602404,
+      "rank_stability_mean": 0.97588583880163,
+      "rank_stability_std": 0.02693618569581469,
+      "wasserstein_mean": 0.005172923554934833,
+      "wasserstein_std": 0.0006407055315602156,
+      "js_divergence_mean": 0.013275453164387508,
+      "js_divergence_std": 0.002957983618428716,
+      "direction_consistency_mean": 0.6064715384644208,
+      "direction_consistency_std": 0.006835115549835348,
+      "magnitude_cv_mean": 0.09493935066681303,
+      "magnitude_cv_std": 0.030163409264137783,
+      "magnitude_iqr_mean": 0.11545099694602522,
+      "magnitude_iqr_std": 0.03046260497548698
+    },
+    {
+      "feature": "MARRIAGE",
+      "rank_stability_global_mean": 0.9906433904259991,
+      "rank_stability_global_std": 0.0033881944475602404,
+      "rank_stability_mean": 0.9952413313273321,
+      "rank_stability_std": 0.013459547551454116,
+      "wasserstein_mean": 0.001965563230515857,
+      "wasserstein_std": 0.0004708116732014441,
+      "js_divergence_mean": 0.02284314332741208,
+      "js_divergence_std": 0.007040851447061236,
+      "direction_consistency_mean": 0.5694992059999779,
+      "direction_consistency_std": 0.0033009794609056087,
+      "magnitude_cv_mean": 0.03637791736495561,
+      "magnitude_cv_std": 0.01207885428203817,
+      "magnitude_iqr_mean": 0.04753997854038547,
+      "magnitude_iqr_std": 0.021160857615863244
+    },
+    {
+      "feature": "AGE",
+      "rank_stability_global_mean": 0.9906433904259991,
+      "rank_stability_global_std": 0.0033881944475602404,
+      "rank_stability_mean": 0.8509086492538874,
+      "rank_stability_std": 0.04744309915181001,
+      "wasserstein_mean": 0.011834405752294067,
+      "wasserstein_std": 0.0033903338451148624,
+      "js_divergence_mean": 0.02104025476043614,
+      "js_divergence_std": 0.0066927015814577055,
+      "direction_consistency_mean": 0.5786525370724259,
+      "direction_consistency_std": 0.005511243573163407,
+      "magnitude_cv_mean": 0.03837296994725509,
+      "magnitude_cv_std": 0.020808753356820257,
+      "magnitude_iqr_mean": 0.04341973603816127,
+      "magnitude_iqr_std": 0.019136060079555504
+    }
+  ]
+}

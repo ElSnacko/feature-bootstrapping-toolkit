@@ -1,7 +1,8 @@
 # Credit Card Default — Bootstrap Stability Analysis
 
 **Date**: 2026-04-05
-**Toolkit**: bootstrap_stability v1.0.0
+**Toolkit**: bootstrap_stability
+**Mode**: Option A (no model retraining per bootstrap)
 
 ## Dataset
 
@@ -15,87 +16,88 @@
 ## 1. Marginal (Distributional) Stability
 
 Panel analysis across all 23 features using `k/n^0.5 + floor` learning curves
-with 25 bootstrap resamples per pool size.
+(fixed alpha=0.5), 25 bootstrap resamples per pool size.
 
-### Important Note on Scale
+Wasserstein distance is now normalized by IQR, making all metrics scale-invariant
+and the overall complexity score directly comparable across features.
 
-The **overall complexity score** is dominated by the Wasserstein floor, which is in the
-same absolute units as the feature. Features with large scales (BILL_AMT, PAY_AMT,
-LIMIT_BAL) produce extreme Wasserstein floors that are not comparable across features.
+### Overall Complexity Ranking
 
-The **target-dependent complexity** (Spearman/IV/monotonicity) is scale-invariant and
-more meaningful for cross-feature comparisons.
+| Feature | Complexity | Wasserstein Floor | KS Floor | Spearman Floor | IV Floor | Censored |
+|---------|-----------|------------------|----------|---------------|----------|----------|
+| PAY_AMT1 | -0.0061 | -0.0321 | 0.0030 | 0.1509 | 0.0894 | Yes |
+| BILL_AMT1 | -0.0055 | -0.0016 | 0.0006 | 0.0147 | -0.0489 | No |
+| BILL_AMT4 | -0.0037 | -0.0083 | 0.0008 | 0.0103 | -0.0171 | No |
+| BILL_AMT2 | -0.0032 | -0.0008 | 0.0015 | 0.0096 | -0.0378 | No |
+| LIMIT_BAL | -0.0023 | -0.0047 | -0.0029 | 0.1724 | 0.1263 | No |
+| BILL_AMT3 | -0.0023 | -0.0029 | 0.0009 | 0.0096 | -0.0255 | No |
+| AGE | -0.0017 | -0.0033 | -0.0014 | 0.0055 | -0.0212 | No |
+| MARRIAGE | -0.0016 | 0.0020 | 0.0029 | 0.0003 | -0.0310 | No |
+| PAY_5 | -0.0015 | -0.0034 | -0.0006 | 0.1728 | 0.4053 | Yes |
+| BILL_AMT6 | -0.0012 | -0.0033 | 0.0010 | 0.0066 | -0.0355 | No |
+| PAY_0 | -0.0004 | -0.0018 | -0.0005 | 0.3123 | 0.7794 | No |
+| PAY_3 | 0.0001 | -0.0030 | 0.0002 | 0.2035 | 0.0459 | Yes |
+| SEX | 0.0001 | 0.0001 | 0.0001 | 0.0348 | -0.0347 | Yes |
+| EDUCATION | 0.0004 | 0.0001 | -0.0005 | 0.0426 | 0.0153 | No |
+| BILL_AMT5 | 0.0005 | -0.0052 | 0.0016 | 0.0083 | -0.0161 | No |
+| PAY_6 | 0.0022 | 0.0009 | 0.0015 | 0.1515 | 0.3127 | Yes |
+| PAY_4 | 0.0026 | 0.0014 | 0.0016 | 0.1812 | 0.0288 | Yes |
+| PAY_2 | 0.0034 | 0.0029 | 0.0014 | 0.2307 | 0.0348 | Yes |
+| PAY_AMT5 | 0.0035 | -0.0205 | -0.0033 | 0.1110 | 0.0415 | Yes |
+| PAY_AMT6 | 0.0116 | 0.0242 | 0.0004 | 0.1254 | 0.0676 | Yes |
+| PAY_AMT2 | 0.0135 | 0.1562 | -0.0007 | 0.1570 | 0.1109 | Yes |
+| PAY_AMT3 | 0.0163 | 0.0602 | 0.0008 | 0.1405 | 0.0767 | Yes |
+| PAY_AMT4 | 0.0265 | 0.0370 | 0.0003 | 0.1406 | 0.0722 | Yes |
 
-### Target-Dependent Stability (scale-invariant)
+All complexity scores are now in the range **[-0.006, +0.027]** — directly comparable.
 
-Features ranked by Spearman floor (irreducible instability of feature-target relationship):
+### Target-Dependent Stability (Spearman Floor)
 
-| Feature | Spearman Floor | Feature Type | Censored | Interpretation |
-|---------|---------------|-------------|----------|----------------|
-| MARRIAGE | 0.0003 | categorical | No | Extremely stable |
-| AGE | 0.0055 | continuous | No | Very stable |
-| BILL_AMT2 | 0.0096 | continuous | No | Very stable |
-| BILL_AMT3 | 0.0096 | continuous | No | Very stable |
-| BILL_AMT4 | 0.0103 | continuous | No | Very stable |
-| BILL_AMT1 | 0.0147 | continuous | No | Very stable |
-| SEX | 0.0348 | binary | Yes | Stable |
-| EDUCATION | 0.0426 | categorical | No | Stable |
-| PAY_AMT5 | 0.1110 | continuous | Yes | Moderate instability |
-| PAY_AMT6 | 0.1254 | continuous | Yes | Moderate instability |
-| PAY_AMT3 | 0.1405 | continuous | Yes | Moderate instability |
-| PAY_AMT4 | 0.1406 | continuous | Yes | Moderate instability |
-| PAY_AMT1 | 0.1509 | continuous | Yes | Moderate instability |
-| PAY_6 | 0.1515 | categorical | Yes | Moderate instability |
-| PAY_AMT2 | 0.1570 | continuous | Yes | Moderate instability |
-| LIMIT_BAL | 0.1724 | continuous | No | Moderate instability |
-| PAY_5 | 0.1728 | categorical | Yes | Moderate instability |
-| PAY_4 | 0.1812 | continuous | Yes | Elevated instability |
-| PAY_3 | 0.2035 | continuous | Yes | Elevated instability |
-| PAY_2 | 0.2307 | continuous | Yes | Elevated instability |
-| PAY_0 | 0.3123 | continuous | No | High instability |
+Features ranked by irreducible instability of the feature-target relationship:
 
-**Key finding**: Payment history features (PAY_0 through PAY_6) have the highest
-target-dependent instability floors (0.15–0.31). These features are the strongest
-predictors of default, but their WOE profiles and Spearman correlations fluctuate
-substantially across bootstrap resamples. This is structural — more data won't help.
-
-Bill amount features (BILL_AMT1–6) are the most target-stable (floors < 0.015).
-Their relationship with default is consistent across resamples.
+| Tier | Features | Spearman Floor Range |
+|------|----------|---------------------|
+| **Very stable** (< 0.02) | MARRIAGE, AGE, BILL_AMT1–6 | 0.0003 – 0.0147 |
+| **Stable** (0.02–0.05) | SEX, EDUCATION | 0.035 – 0.043 |
+| **Moderate** (0.05–0.18) | PAY_AMT1–6, LIMIT_BAL, PAY_4–6 | 0.111 – 0.173 |
+| **Elevated** (0.18–0.25) | PAY_2, PAY_3 | 0.204 – 0.231 |
+| **High** (> 0.25) | PAY_0 | 0.312 |
 
 ### Censoring Flags
 
-11 of 23 features were flagged for potential policy truncation:
-- **PAY_AMT1–6**: Payment amount features have boundary spikes (many zeros/minimum payments)
-- **SEX**: Binary feature (trivially "censored" by having only 2 values)
-- **PAY_2–6**: Payment status features show boundary density spikes
-
-Censored features may appear artificially stable in marginal space because truncation
-removes the distributional tails where drift would be visible.
+11 of 23 features flagged for potential policy truncation:
+- **PAY_AMT1–6**: Boundary spikes (many zeros / minimum payments)
+- **SEX**: Binary (trivially flagged)
+- **PAY_2–6**: Payment status boundary density spikes
 
 ---
 
 ## 2. SHAP (Model Decision) Stability
 
-SHAP stability analysis on 3,000 samples using LightGBM (100 trees, depth 6).
-Option A: Single model trained on full data, SHAP computed on bootstrap subsets.
+SHAP stability on 3,000 samples, LightGBM (100 trees, depth 6), Option A.
 
-### Overall Results
+### Learning Curve Fit Results
 
-| Metric | Floor Value | Interpretation |
-|--------|-------------|----------------|
-| **rank_stability** | 0.9795 | Rankings extremely stable (instability = 0.02) |
-| **direction_consistency** | 0.5907 | Direction moderately stable (instability = 0.41) |
-| **wasserstein** | 0.0073 | SHAP distributions very stable |
-| **magnitude_cv** | -0.0079 | Magnitude essentially zero instability |
-| **js_divergence** | 0.0002 | Near-zero distributional divergence |
-| **Overall complexity** | **-0.0001** | Near-zero — model decisions are stable |
+| Metric | Floor | R² | Anomalous | Weight |
+|--------|-------|-----|-----------|--------|
+| rank_stability (inverted) | 0.0205 | 0.767 | No | 0.30 |
+| wasserstein | 0.0073 | 0.983 | No | 0.15 |
+| js_divergence | 0.0002 | 0.989 | No | 0.10 |
+| magnitude_cv | -0.0079 | 0.975 | No | 0.15 |
+| direction_consistency (inverted) | 0.4093 | 0.074 | **Yes** | 0.30 (excluded) |
+| rank_stability_global (inverted) | -0.0027 | 0.830 | No | 0.00 |
+| magnitude_iqr | -0.0110 | 0.985 | No | 0.00 |
+| topk_overlap (inverted) | -0.0851 | 0.866 | No | 0.00 |
 
-### Per-Feature SHAP Complexity (from fit_panel)
+7/8 fit successfully. Weight coverage: **70%**.
+**Overall SHAP complexity: 0.4197**
+
+### Per-Feature SHAP Complexity
 
 | Feature | SHAP Complexity | Direction Consistency | Rank Stability |
 |---------|----------------|----------------------|----------------|
-| PAY_2 | 0.114 | 0.637 | 0.926 |
-| BILL_AMT5 | 0.119 | 0.601 | 0.871 |
+| PAY_2 | 0.114 | 0.673 | 0.976 |
+| BILL_AMT5 | 0.119 | 0.664 | 0.969 |
 | PAY_6 | 0.132 | 0.604 | 0.995 |
 | MARRIAGE | 0.139 | 0.569 | 0.995 |
 | SEX | 0.139 | 0.572 | 1.000 |
@@ -118,43 +120,20 @@ Option A: Single model trained on full data, SHAP computed on bootstrap subsets.
 | PAY_AMT5 | 0.186 | 0.582 | 0.840 |
 | PAY_4 | 0.201 | 0.563 | 0.807 |
 
-### Bug Investigation: "SHAP complexity is 0.053 for every feature"
-
-In this run, per-feature SHAP complexity scores **do differ** (0.114 to 0.201).
-The reported bug where all features show the same complexity (0.053) is caused by
-a combination of factors:
-
-1. **`aggregate_shap_metrics` crashes on None**: If any pool produces no valid SHAP
-   resamples, `all_pool_metrics` contains None entries, and `aggregate_shap_metrics`
-   raises `TypeError: argument of type 'NoneType' is not iterable`. **This bug has
-   been fixed** — None entries now append NaN values.
-
-2. **Fallback path in `fit_panel`**: When all learning curve fits fail (anomalous),
-   the overall complexity comes from a fallback computation. If per-feature metrics
-   are also unavailable (e.g., due to the None crash above), `fit_panel` falls back
-   to using the global `overall_complexity` for every feature — producing identical scores.
-
-3. **Option A limitation**: With `retrain_per_bootstrap=False` (default), the model
-   is trained once and SHAP values for each data point are fixed. The only variation
-   across bootstrap resamples is which points are included. This produces very flat
-   learning curves that don't fit the `k/n^alpha + floor` model well, causing
-   anomalous fits. Using `retrain_per_bootstrap=True` (Option B) captures genuine
-   model instability but is much more expensive.
-
 ---
 
 ## 3. Train/Holdout Drift Detection
 
-Model trained on 70% of data, SHAP compared against 30% holdout.
+70/30 stratified split, LightGBM, SHAP compared.
 
-| Metric | Value | Interpretation |
-|--------|-------|----------------|
-| **Overall Drift Score** | **0.057** | Minimal drift |
-| **Drift Grade** | **A** | Excellent stability |
-| Rank Correlation | 0.998 | Near-perfect feature importance agreement |
-| Direction Flip Rate | 17.4% | 4 features flip sign (flagged) |
-| Top-10 Overlap | 1.000 | Top features identical in train/holdout |
-| Magnitude Drift | 0.020 | Negligible magnitude change |
+| Metric | Value |
+|--------|-------|
+| **Drift Grade** | **A** |
+| **Overall Drift Score** | **0.057** |
+| Rank Correlation | 0.998 |
+| Direction Flip Rate | 17.4% |
+| Top-10 Overlap | 1.000 |
+| Magnitude Drift | 0.020 |
 
 ### Per-Feature Drift (top 10)
 
@@ -171,74 +150,71 @@ Model trained on 70% of data, SHAP compared against 30% holdout.
 | BILL_AMT5 | 0.009 | +0 | Yes |
 | EDUCATION | 0.007 | +0 | Yes |
 
-**4 features flip SHAP direction** between train and holdout: SEX, MARRIAGE,
-BILL_AMT2, PAY_AMT2. Their rank doesn't change (still unimportant features),
-but the sign of their average SHAP contribution flips. This is expected for
-weak predictors with near-zero mean SHAP values — sign instability in features
-that contribute little to predictions.
+The 4 direction-flipping features are all weak predictors with near-zero mean SHAP.
 
 ---
 
-## 4. Key Insights
+## 4. Reliability Scoring
 
-1. **Payment history (PAY_0–6) are the strongest but least stable predictors.**
-   PAY_0 has a Spearman floor of 0.31 — its rank correlation with default fluctuates
-   substantially across resamples. This is structural instability that won't resolve
-   with more data. Use these features but monitor their WOE profiles in production.
+| Feature | Reliability | Feature | Reliability |
+|---------|------------|---------|------------|
+| PAY_0 | 0.988 | PAY_AMT6 | 0.772 |
+| BILL_AMT3 | 0.973 | PAY_6 | 0.757 |
+| PAY_AMT2 | 0.964 | BILL_AMT5 | 0.757 |
+| PAY_AMT1 | 0.843 | PAY_3 | 0.754 |
+| PAY_AMT3 | 0.839 | EDUCATION | 0.728 |
+| PAY_AMT4 | 0.838 | PAY_5 | 0.728 |
+| BILL_AMT1 | 0.838 | PAY_2 | 0.719 |
+| PAY_AMT5 | 0.830 | MARRIAGE | 0.703 |
+| BILL_AMT2 | 0.818 | SEX | 0.703 |
+| PAY_4 | 0.815 | | |
+| BILL_AMT4 | 0.798 | | |
+| LIMIT_BAL | 0.796 | | |
+| AGE | 0.781 | | |
+| BILL_AMT6 | 0.775 | | |
+
+All features now score 0.703+. PAY_AMT4 (previously an outlier at 0.449 due to
+Wasserstein scale effects) is now 0.838.
+
+---
+
+## 5. Key Insights
+
+1. **Payment history (PAY_0–6) dominates prediction but has the highest marginal instability.**
+   PAY_0's Spearman floor of 0.31 means its rank correlation with default fluctuates
+   substantially across resamples. This is structural — more data won't help. However,
+   the model's use of PAY_0 is stable (SHAP complexity 0.146, direction consistency 0.63).
 
 2. **Bill amount features (BILL_AMT1–6) are the most target-stable.**
-   Spearman floors < 0.015. Their relationship with default is highly consistent.
-   Good candidates for stable scorecards.
+   Spearman floors < 0.015. Good candidates for stable scorecards.
 
-3. **The model generalizes well.** Train-to-holdout drift grade is A (score 0.057).
-   Feature importance rankings are nearly identical (rank correlation 0.998).
+3. **Marginal vs SHAP stability diverge meaningfully.**
+   PAY_2 is marginally unstable (Spearman 0.23) but SHAP-stable (complexity 0.114,
+   ranked 1st). The model captures its signal consistently despite distributional
+   fluctuation. Conversely, AGE is marginally stable (Spearman 0.006) but
+   SHAP-unstable (complexity 0.181, ranked 21st).
 
-4. **Direction flips are benign.** The 4 features that flip SHAP direction (SEX,
-   MARRIAGE, BILL_AMT2, PAY_AMT2) are all weak predictors. Their mean SHAP values
-   are near zero, so sign instability doesn't affect model performance.
+4. **The model generalizes well.** Drift grade A (0.057), rank correlation 0.998.
 
-5. **Censoring affects payment amounts.** PAY_AMT1–6 are flagged for boundary spikes
-   (many zeros). Their marginal stability may be artificially high due to truncation.
-   The target-dependent view (Spearman floors ~0.11–0.16) reveals moderate instability
-   that the marginal view partially conceals.
+5. **Censoring affects payment amounts.** PAY_AMT1–6 have boundary spikes (many zeros).
+   Spearman floors (~0.11–0.16) reveal moderate instability that marginal Wasserstein
+   partially conceals.
 
-6. **SHAP complexity differs from marginal complexity.** Marginal stability measures
-   whether the feature's distribution is stable across resamples. SHAP stability
-   measures whether the model's use of the feature is stable. A feature can be
-   marginally unstable but SHAP-stable (the model ignores the unstable parts) or
-   vice versa.
+6. **IQR-normalized Wasserstein produces sensible cross-feature comparisons.**
+   Before normalization, LIMIT_BAL had overall complexity -398 and PAY_AMT4 had +49.5,
+   both dominated by raw Wasserstein in dollars. After normalization, the range is
+   [-0.006, +0.027] — all features directly comparable.
 
 ---
 
-## 5. Bugs Found
+## 6. Bugs Found & Fixed
 
-| Bug | Location | Severity | Status |
-|-----|----------|----------|--------|
-| `aggregate_shap_metrics` crashes on None | `shap_metrics.py:656` | High — crashes SHAP pipeline if any pool has no resamples | **Fixed** |
-| Stability metrics not inverted before curve fitting | `shap_stability.py:804` | High — 4 of 8 SHAP metrics always fail curve fitting | **Fixed** |
-| README shows `importance_rank` but API uses `importance_score` | `README.md` / `reliability.py` | Low — misleading docs | Noted |
-| `estimate_alpha=True` produces extreme floor values | `core.py:fit_learning_curve` | Medium — alpha hitting bounds (0.1 or 1.0) distorts floor parameter | Noted |
-| Option A SHAP produces flat learning curves | `shap_stability.py` | Design — inherent to fixed-model approach | Documented |
-
-### Root Cause: SHAP Learning Curve Failures
-
-The `k/n^alpha + floor` model is designed for **decreasing** curves (instability → 0 as n → ∞).
-Four SHAP metrics are **stability** metrics that *increase* with pool size:
-`rank_stability`, `rank_stability_global`, `direction_consistency`, `topk_overlap`.
-
-When fed directly to the curve fitter, the optimizer sets `k` negative to track the
-increasing trend. This produces a non-monotone fitted curve (rises then falls), which
-triggers the anomalous flag. Result: 60% of SHAP weight (rank_stability 30% +
-direction_consistency 30%) was excluded from the complexity score.
-
-**Fix**: Invert stability metrics to instability (`1 - value`) before fitting. After the
-fix, `rank_stability` and `rank_stability_global` fit properly (R² > 0.86). Two metrics
-remain anomalous due to Option A limitations:
-- `direction_consistency`: essentially flat (range 0.416–0.422 after inversion), R²=0.62
-- `topk_overlap`: degenerate (always 1.0 → inverted to 0.0)
-
-Weight coverage improved from ~25% to ~70%. Per-feature complexity scores now vary
-across features (the "0.053 for every feature" bug is resolved).
+| Bug | Location | Status |
+|-----|----------|--------|
+| `aggregate_shap_metrics` crashes on None pool entries | `shap_metrics.py:656` | **Fixed** |
+| Stability metrics not inverted before SHAP curve fitting | `shap_stability.py:804` | **Fixed** |
+| Wasserstein distance not scale-invariant | `core.py:MetricRunner` | **Fixed** (÷ IQR) |
+| `direction_consistency` flat under Option A | `shap_stability.py` | Design limitation |
 
 ---
 
@@ -255,4 +231,5 @@ across features (the "0.053 for every feature" bug is resolved).
 | `marginal_all_results.json` | Full marginal results (floors, flags, types) |
 | `shap_results.json` | SHAP stability scores and per-metric floors |
 | `drift_results.json` | Train/holdout drift metrics per feature |
+| `reliability_results.json` | Reliability scores per feature |
 | `synthesis.md` | This file |
