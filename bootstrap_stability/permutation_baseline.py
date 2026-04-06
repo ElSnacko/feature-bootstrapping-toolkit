@@ -5,12 +5,21 @@ the marginal distribution. Running the bootstrap analysis on permuted data
 gives a null distribution of complexity scores that represents pure noise.
 """
 
+import warnings
 import numpy as np
 import pandas as pd
 from typing import Optional, List
 
 from .analyzer import BootstrapStability
 from .core import get_complexity_score
+
+
+_AGNOSTIC_WARNING = (
+    "Permutation preserves the marginal feature distribution, so target-agnostic "
+    "metrics (Wasserstein, KS, JS) produce near-zero null scores by construction — "
+    "the null is trivially easy and p-values will be uninformative. "
+    "Use category='target_dependent' for meaningful permutation p-values."
+)
 
 
 class PermutationBaseline:
@@ -61,7 +70,7 @@ class PermutationBaseline:
         df: pd.DataFrame,
         feature_col: str,
         target_col: str,
-        category: str = "overall",
+        category: str = "target_dependent",
     ) -> dict:
         """Run permutation baseline for a single feature.
 
@@ -74,8 +83,17 @@ class PermutationBaseline:
         target_col : str
             Target column name.
         category : str
-            Complexity score category: "overall", "target_agnostic", or
-            "target_dependent".
+            Complexity score category: "target_dependent" (default),
+            "target_agnostic", or "overall".
+
+            .. note::
+                Permutation shuffles the feature-target association while
+                preserving the marginal feature distribution. This makes the
+                null meaningful only for target-dependent metrics (Spearman,
+                IV, Monotonicity). For target-agnostic metrics (Wasserstein,
+                KS, JS) the permuted feature has the same distribution as the
+                original, so null scores are near zero by construction and the
+                resulting p-values are uninformative.
 
         Returns
         -------
@@ -88,6 +106,9 @@ class PermutationBaseline:
             z_score : float — (observed - null_mean) / null_std
             significant : bool — p_value < alpha
         """
+        if category in ("target_agnostic", "overall"):
+            warnings.warn(_AGNOSTIC_WARNING, UserWarning, stacklevel=2)
+
         rng = np.random.RandomState(self.random_state)
 
         # Observed score
@@ -141,7 +162,7 @@ class PermutationBaseline:
         df: pd.DataFrame,
         target_col: str,
         feature_cols: Optional[List[str]] = None,
-        category: str = "overall",
+        category: str = "target_dependent",
     ) -> dict:
         """Run permutation baseline for all features.
 
