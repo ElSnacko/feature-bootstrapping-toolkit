@@ -130,6 +130,21 @@ def check_truncation(x, spike_threshold=0.10, min_samples=100) -> dict:
             "upper_boundary": float(x.max()) if len(x) > 0 else np.nan,
         }
 
+    # Binary features always concentrate at exactly two values; that is not
+    # policy truncation, so skip the censoring check entirely.
+    if len(np.unique(x)) <= 2:
+        return {
+            "censoring_flag": False,
+            "censoring_severity": 0.0,
+            "censoring_detail": "binary feature — censoring not applicable",
+            "lower_spike": False,
+            "upper_spike": False,
+            "lower_severity": 0.0,
+            "upper_severity": 0.0,
+            "lower_boundary": float(x.min()),
+            "upper_boundary": float(x.max()),
+        }
+
     x_min, x_max = x.min(), x.max()
     n = len(x)
 
@@ -416,6 +431,7 @@ class MetricRunner:
 
         result = {
             "wasserstein": wasserstein,
+            "metric_type": "wasserstein",
             "ks": float(ks_stat),
             "js": js,
             "woe_profile": None,
@@ -536,7 +552,8 @@ class CategoricalMetricRunner:
         js = self._compute_js_divergence_categorical(self.ref_value_counts, boot_value_counts)
         
         result = {
-            "wasserstein": tv_distance,  # Use TV distance, but keep key name for compatibility
+            "wasserstein": tv_distance,  # TV distance stored under "wasserstein" key for pipeline compatibility
+            "metric_type": "tv_distance",  # distinguishes this from Wasserstein in downstream reporting
             "ks": float(ks_stat),
             "js": js,
             "woe_profile": None,

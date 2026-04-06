@@ -300,6 +300,12 @@ class BootstrapStability:
             means = lc.get(metric, {}).get("means", [])
             return means[-1] if means else np.nan
 
+        # For categorical features the "wasserstein" slot holds Total Variation
+        # distance; surface this so callers can avoid comparing the two directly.
+        dist_metric = (
+            "tv_distance" if meta["feature_type"] == "categorical" else "wasserstein"
+        )
+
         return {
             "feature": meta["feature"],
             "n_obs": meta["n_obs"],
@@ -309,6 +315,7 @@ class BootstrapStability:
             "censoring_flag": meta["censoring_flag"],
             "censoring_severity": meta.get("censoring_severity", 0.0),
             "imbalance_flag": meta["imbalance_flag"],
+            "distributional_metric": dist_metric,
             "wasserstein_floor": _floor("wasserstein"),
             "ks_floor": _floor("ks"),
             "js_floor": _floor("js"),
