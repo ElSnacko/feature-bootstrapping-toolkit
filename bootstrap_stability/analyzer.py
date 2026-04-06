@@ -168,18 +168,21 @@ class BootstrapStability:
                     learning_curves_raw[m]["stderrs"].append(np.nan)
                 continue
 
-            # Treat monotonicity as a metric: fraction of monotone resamples
-            mono_values = [r["monotone"] for r in resample_results if r.get("monotone") is not None]
+            # Monotonicity: continuous score in [0, 1] (Spearman of WOE vs bin rank).
+            # Instability = 1 - score. NaN values (categorical features) are filtered out.
+            mono_values = [r["monotone"] for r in resample_results
+                           if r.get("monotone") is not None and np.isfinite(r["monotone"])]
             metric_agg = aggregate_resample_metrics(
                 resample_results,
                 ["wasserstein", "ks", "js", "spearman", "iv"]
             )
 
             if mono_values:
+                instab_values = [1.0 - float(v) for v in mono_values]
                 metric_agg["monotonicity"] = {
-                    "mean": float(1.0 - np.mean(mono_values)),  # instability = non-monotone rate
-                    "stderr": float(np.std(mono_values, ddof=1) / np.sqrt(len(mono_values))) if len(mono_values) > 1 else 0.0,
-                    "values": [1.0 - float(v) for v in mono_values],
+                    "mean": float(np.mean(instab_values)),
+                    "stderr": float(np.std(instab_values, ddof=1) / np.sqrt(len(instab_values))) if len(instab_values) > 1 else 0.0,
+                    "values": instab_values,
                 }
             else:
                 metric_agg["monotonicity"] = {"mean": np.nan, "stderr": np.nan, "values": []}
@@ -238,6 +241,7 @@ class BootstrapStability:
                 "imbalance_flag": imbalance_result.get("imbalance_flag", False),
                 "imbalance_severity": imbalance_result.get("severity", "none"),
                 "censoring_flag": censoring_result["censoring_flag"],
+                "censoring_severity": censoring_result.get("censoring_severity", 0.0),
                 "censoring_detail": censoring_result["censoring_detail"],
                 "feature_type": feature_type,
                 "has_target": has_target,
@@ -303,6 +307,7 @@ class BootstrapStability:
             "feature_type": meta["feature_type"],
             "complexity_score": results["complexity_score"],
             "censoring_flag": meta["censoring_flag"],
+            "censoring_severity": meta.get("censoring_severity", 0.0),
             "imbalance_flag": meta["imbalance_flag"],
             "wasserstein_floor": _floor("wasserstein"),
             "ks_floor": _floor("ks"),

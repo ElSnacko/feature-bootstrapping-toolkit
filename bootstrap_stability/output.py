@@ -211,24 +211,32 @@ def plot_panel(panel_results, save_path=None, top_n=30, figsize=(12, 8), dpi=150
     df = summary.dropna(subset=["complexity_score"]).head(top_n)
     features = df["feature"].tolist()
     scores = df["complexity_score"].tolist()
-    censoring = df["censoring_flag"].tolist() if "censoring_flag" in df.columns else [False] * len(df)
 
-    bar_colors = ["#D85A30" if c else "#378ADD" for c in censoring]
+    # Color by censoring severity gradient (blue=clean, red=severe)
+    if "censoring_severity" in df.columns:
+        severities = df["censoring_severity"].fillna(0.0).tolist()
+    elif "censoring_flag" in df.columns:
+        severities = [1.0 if c else 0.0 for c in df["censoring_flag"].tolist()]
+    else:
+        severities = [0.0] * len(df)
+
+    import matplotlib.colors as mcolors
+    cmap = mcolors.LinearSegmentedColormap.from_list("censor", ["#378ADD", "#D85A30"])
+    bar_colors = [cmap(s) for s in severities]
 
     fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
     y_pos = np.arange(len(features))
-    ax.barh(y_pos, scores, color=bar_colors, alpha=0.85)
+    bars = ax.barh(y_pos, scores, color=bar_colors, alpha=0.85)
     ax.set_yticks(y_pos)
     ax.set_yticklabels(features, fontsize=9)
     ax.set_xlabel("Complexity Score")
-    ax.set_title("Feature Complexity Scores (ascending)\nBlue = clean, Red = censoring detected")
+    ax.set_title("Feature Complexity Scores (ascending)\nColor: censoring severity (blue=none, red=severe)")
 
-    from matplotlib.patches import Patch
-    legend_elements = [
-        Patch(facecolor="#378ADD", alpha=0.85, label="No censoring"),
-        Patch(facecolor="#D85A30", alpha=0.85, label="Censoring detected"),
-    ]
-    ax.legend(handles=legend_elements, loc="lower right", fontsize=9)
+    # Add colorbar for severity
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=mcolors.Normalize(0, 1))
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=ax, pad=0.02, aspect=30)
+    cbar.set_label("Censoring Severity", fontsize=9)
 
     if save_path:
         fig.savefig(save_path, bbox_inches="tight")
@@ -255,9 +263,13 @@ def print_report(results) -> None:
         er_str = f"{er:.4f}" if np.isfinite(er) else "n/a"
         print(f"{'Event rate':<20}: {er_str}")
     imb_str = "Yes" if meta.get("imbalance_flag") else "No"
-    cen_str = "Yes" if meta.get("censoring_flag") else "No"
+    cen_sev = meta.get("censoring_severity", 0.0)
+    if meta.get("censoring_flag"):
+        cen_str = f"Yes (severity={cen_sev:.3f})"
+    else:
+        cen_str = "No"
     print(f"{'Imbalance flag':<20}: {imb_str}")
-    print(f"{'Censoring flag':<20}: {cen_str}")
+    print(f"{'Censoring':<20}: {cen_str}")
     excl = results.get("excluded_pools", [])
     if excl:
         print(f"{'Excluded pools':<20}: {excl}")

@@ -203,17 +203,49 @@ Wasserstein scale effects) is now 0.838.
 6. **IQR-normalized Wasserstein produces sensible cross-feature comparisons.**
    Before normalization, LIMIT_BAL had overall complexity -398 and PAY_AMT4 had +49.5,
    both dominated by raw Wasserstein in dollars. After normalization, the range is
-   [-0.006, +0.027] — all features directly comparable.
+   [-0.011, +0.009] — all features directly comparable.
+
+7. **Monotonicity is now informative.** The old binary monotonicity check (is WOE
+   profile perfectly monotone?) produced floors of ~1.0 for every feature — completely
+   uninformative. Replaced with Spearman correlation of WOE vs bin rank, giving
+   continuous scores: PAY_AMT1=0.00 (perfectly monotone), AGE=0.81 (weak), PAY_0=0.51.
+   Categorical features correctly excluded (NaN).
+
+8. **Censoring severity differentiates features.** The old binary flag marked 11/23
+   features identically. The new severity score ranges from 0.095 (PAY_3, mild) to
+   0.423 (SEX, boundary-dominated). PAY_AMT1's zero-payment spike scores 0.369.
 
 ---
 
-## 6. Bugs Found & Fixed
+## 6. Marginal vs SHAP Validation
+
+Spearman rank correlation between marginal and SHAP complexity: **rho = -0.29** (p=0.18).
+The two views diverge substantially — marginal instability is a poor predictor of
+model-decision instability.
+
+| Quadrant | Count | Interpretation |
+|----------|-------|----------------|
+| Concordant stable | 4 | Both views agree: stable |
+| Concordant unstable | 3 | Both views agree: unstable |
+| False alarm | 8 | Marginal flags instability, SHAP does not |
+| Missed risk | 8 | Marginal misses instability that SHAP detects |
+
+Only 30% of features are concordant. The remaining 70% disagree — confirming that
+marginal distributional stability is necessary but not sufficient for model-decision
+stability.
+
+---
+
+## 7. Bugs Found & Fixed
 
 | Bug | Location | Status |
 |-----|----------|--------|
 | `aggregate_shap_metrics` crashes on None pool entries | `shap_metrics.py:656` | **Fixed** |
 | Stability metrics not inverted before SHAP curve fitting | `shap_stability.py:804` | **Fixed** |
 | Wasserstein distance not scale-invariant | `core.py:MetricRunner` | **Fixed** (÷ IQR) |
+| Monotonicity floor uninformative (~1.0 for all features) | `core.py:_compute_woe_iv` | **Fixed** (Spearman of WOE) |
+| Censoring flag binary with 48% flag rate | `core.py:check_truncation` | **Fixed** (severity gradient) |
+| Dead `woe_sd` weight in DEFAULT_WEIGHTS | `core.py` | **Fixed** (removed, rebalanced) |
 | `direction_consistency` flat under Option A | `shap_stability.py` | Design limitation |
 
 ---
@@ -223,12 +255,13 @@ Wasserstein scale effects) is now 0.838.
 | File | Description |
 |------|-------------|
 | `marginal_panel_summary.csv` | Marginal stability scores for all 23 features |
-| `marginal_panel_chart.png` | Bar chart of complexity scores |
+| `marginal_panel_chart.png` | Bar chart with censoring severity gradient |
 | `marginal_LIMIT_BAL.png/.csv` | Deep dive: credit limit |
 | `marginal_PAY_0.png/.csv` | Deep dive: payment status |
 | `marginal_AGE.png/.csv` | Deep dive: age |
 | `marginal_BILL_AMT1.png/.csv` | Deep dive: bill amount |
-| `marginal_all_results.json` | Full marginal results (floors, flags, types) |
+| `marginal_all_results.json` | Full marginal results (floors, flags, severity) |
+| `marginal_vs_shap.png` | Scatter plot: marginal vs SHAP complexity |
 | `shap_results.json` | SHAP stability scores and per-metric floors |
 | `drift_results.json` | Train/holdout drift metrics per feature |
 | `reliability_results.json` | Reliability scores per feature |

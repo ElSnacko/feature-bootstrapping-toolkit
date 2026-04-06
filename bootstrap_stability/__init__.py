@@ -71,6 +71,12 @@ from .meta_bootstrap import (
     MetaBootstrap,
 )
 
+# Permutation Baseline
+from .permutation_baseline import PermutationBaseline
+
+# Validation
+from .validation import MarginalVsSHAPValidator, plot_marginal_vs_shap
+
 # Synthetic Validation Suite
 from .synthetic_validation import (
     InstabilityType,
@@ -112,6 +118,12 @@ __all__ = [
     # Meta-Bootstrap for Confidence Intervals
     "SplitStrategy", "MetaBootstrapResult", "MetaBootstrap",
     
+    # Permutation Baseline
+    "PermutationBaseline",
+
+    # Validation
+    "MarginalVsSHAPValidator", "plot_marginal_vs_shap",
+
     # Synthetic Validation Suite
     "InstabilityType", "TestResult", "SyntheticValidation", "print_synthetic_report",
 ]

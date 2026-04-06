@@ -1,22 +1,8 @@
 {
-  "PAY_AMT1": {
-    "reliability_score": 0.8429779796777922,
-    "stability_component": 1.0,
-    "importance_component": 0.516593265592641,
-    "coverage_component": 0.95,
-    "consistency_component": 0.97
-  },
   "BILL_AMT1": {
     "reliability_score": 0.8382907708977966,
     "stability_component": 1.0,
     "importance_component": 0.500969236325989,
-    "coverage_component": 0.95,
-    "consistency_component": 0.97
-  },
-  "BILL_AMT4": {
-    "reliability_score": 0.7981416164015854,
-    "stability_component": 1.0,
-    "importance_component": 0.36713872133861847,
     "coverage_component": 0.95,
     "consistency_component": 0.97
   },
@@ -27,10 +13,17 @@
     "coverage_component": 0.95,
     "consistency_component": 0.97
   },
-  "LIMIT_BAL": {
-    "reliability_score": 0.796303805098952,
+  "PAY_AMT1": {
+    "reliability_score": 0.8429779796777922,
     "stability_component": 1.0,
-    "importance_component": 0.36101268366317374,
+    "importance_component": 0.516593265592641,
+    "coverage_component": 0.95,
+    "consistency_component": 0.97
+  },
+  "BILL_AMT4": {
+    "reliability_score": 0.7981416164015854,
+    "stability_component": 1.0,
+    "importance_component": 0.36713872133861847,
     "coverage_component": 0.95,
     "consistency_component": 0.97
   },
@@ -41,6 +34,27 @@
     "coverage_component": 0.95,
     "consistency_component": 0.97
   },
+  "MARRIAGE": {
+    "reliability_score": 0.7033640751360104,
+    "stability_component": 1.0,
+    "importance_component": 0.05121358378670151,
+    "coverage_component": 0.95,
+    "consistency_component": 0.97
+  },
+  "PAY_AMT6": {
+    "reliability_score": 0.776520959818768,
+    "stability_component": 1.0,
+    "importance_component": 0.2950698660625602,
+    "coverage_component": 0.95,
+    "consistency_component": 0.97
+  },
+  "BILL_AMT6": {
+    "reliability_score": 0.7748980401431206,
+    "stability_component": 1.0,
+    "importance_component": 0.2896601338104022,
+    "coverage_component": 0.95,
+    "consistency_component": 0.97
+  },
   "AGE": {
     "reliability_score": 0.7805051386520702,
     "stability_component": 1.0,
@@ -48,10 +62,17 @@
     "coverage_component": 0.95,
     "consistency_component": 0.97
   },
-  "MARRIAGE": {
-    "reliability_score": 0.7033640751360104,
+  "PAY_AMT3": {
+    "reliability_score": 0.8453981864081873,
     "stability_component": 1.0,
-    "importance_component": 0.05121358378670151,
+    "importance_component": 0.5246606213606247,
+    "coverage_component": 0.95,
+    "consistency_component": 0.97
+  },
+  "LIMIT_BAL": {
+    "reliability_score": 0.796303805098952,
+    "stability_component": 1.0,
+    "importance_component": 0.36101268366317374,
     "coverage_component": 0.95,
     "consistency_component": 0.97
   },
@@ -62,10 +83,10 @@
     "coverage_component": 0.95,
     "consistency_component": 0.97
   },
-  "BILL_AMT6": {
-    "reliability_score": 0.7748980401431206,
+  "BILL_AMT5": {
+    "reliability_score": 0.7573643048137183,
     "stability_component": 1.0,
-    "importance_component": 0.2896601338104022,
+    "importance_component": 0.23121434937906124,
     "coverage_component": 0.95,
     "consistency_component": 0.97
   },
@@ -97,13 +118,6 @@
     "coverage_component": 0.95,
     "consistency_component": 0.97
   },
-  "BILL_AMT5": {
-    "reliability_score": 0.7571481547533773,
-    "stability_component": 0.9994596248491474,
-    "importance_component": 0.23121434937906124,
-    "coverage_component": 0.95,
-    "consistency_component": 0.97
-  },
   "PAY_6": {
     "reliability_score": 0.7573400264917175,
     "stability_component": 0.9978125182728873,
@@ -126,37 +140,23 @@
     "consistency_component": 0.97
   },
   "PAY_AMT5": {
-    "reliability_score": 0.8298721622689184,
-    "stability_component": 0.9965459288586563,
+    "reliability_score": 0.8298764372031586,
+    "stability_component": 0.9965566161942571,
     "importance_component": 0.4775126357515195,
     "coverage_component": 0.95,
     "consistency_component": 0.97
   },
-  "PAY_AMT6": {
-    "reliability_score": 0.7718852481114297,
-    "stability_component": 0.988410720731654,
-    "importance_component": 0.2950698660625602,
+  "PAY_AMT4": {
+    "reliability_score": 0.8472027383955629,
+    "stability_component": 0.9954830004193249,
+    "importance_component": 0.5366984607594435,
     "coverage_component": 0.95,
     "consistency_component": 0.97
   },
   "PAY_AMT2": {
-    "reliability_score": 0.9642290242416754,
-    "stability_component": 0.9865483446524497,
+    "reliability_score": 0.9661280814672119,
+    "stability_component": 0.9912959877162909,
     "importance_component": 0.9386989546023188,
-    "coverage_component": 0.95,
-    "consistency_component": 0.97
-  },
-  "PAY_AMT3": {
-    "reliability_score": 0.8388959855672485,
-    "stability_component": 0.9837444978976528,
-    "importance_component": 0.5246606213606247,
-    "coverage_component": 0.95,
-    "consistency_component": 0.97
-  },
-  "PAY_AMT4": {
-    "reliability_score": 0.8384171657399696,
-    "stability_component": 0.9735190687803414,
-    "importance_component": 0.5366984607594435,
     "coverage_component": 0.95,
     "consistency_component": 0.97
   }

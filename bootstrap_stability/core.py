@@ -15,10 +15,9 @@ VERSION = "1.0.0"
 
 DEFAULT_WEIGHTS = {
     "target_dependent": {
-        "spearman": 0.35,
-        "monotonicity": 0.25,
-        "woe_sd": 0.25,
-        "iv": 0.15,
+        "spearman": 0.40,
+        "monotonicity": 0.30,
+        "iv": 0.30,
     },
     "distributional": {
         "wasserstein": 0.45,
@@ -110,16 +109,23 @@ def adjust_min_events_for_imbalance(base_min_events, imbalance_result) -> int:
 
 
 def check_truncation(x, spike_threshold=0.10, min_samples=100) -> dict:
-    """Detect policy censoring via hard walls and boundary density spikes."""
+    """Detect policy censoring via hard walls and boundary density spikes.
+
+    Returns a dict with boolean flag (backward compat) plus a continuous
+    censoring_severity score in [0, 1] for prioritization.
+    """
     x = np.asarray(x, dtype=float)
     x = x[~np.isnan(x)]
 
     if len(x) < min_samples:
         return {
             "censoring_flag": False,
+            "censoring_severity": 0.0,
             "censoring_detail": "insufficient samples",
             "lower_spike": False,
             "upper_spike": False,
+            "lower_severity": 0.0,
+            "upper_severity": 0.0,
             "lower_boundary": float(x.min()) if len(x) > 0 else np.nan,
             "upper_boundary": float(x.max()) if len(x) > 0 else np.nan,
         }
@@ -135,6 +141,10 @@ def check_truncation(x, spike_threshold=0.10, min_samples=100) -> dict:
 
     # Hard cutoff signal: outer 1% vs adjacent 4% band
     x_range = x_max - x_min
+    lower_density_ratio = 0.0
+    upper_density_ratio = 0.0
+    lower_affected = 0.0
+    upper_affected = 0.0
     if x_range > 0:
         lower_1pct = x_min + 0.01 * x_range
         lower_5pct = x_min + 0.05 * x_range
@@ -151,19 +161,42 @@ def check_truncation(x, spike_threshold=0.10, min_samples=100) -> dict:
         if band_upper > 0 and outer_upper > 3 * band_upper:
             upper_spike = True
 
+        # Density ratios for severity (how much boundary exceeds adjacent band)
+        lower_density_ratio = (outer_lower / band_lower) if band_lower > 0 else 0.0
+        upper_density_ratio = (outer_upper / band_upper) if band_upper > 0 else 0.0
+        lower_affected = outer_lower
+        upper_affected = outer_upper
+
+    # Severity per boundary: weighted combination of concentration + density ratio
+    # Boundary concentration: fraction of data at exact boundary value
+    # Density ratio: how much the boundary bin exceeds adjacent band (capped at 20, normalized)
+    # Affected fraction: how much data sits in the boundary region
+    def _boundary_severity(prop_at_boundary, density_ratio, affected_frac):
+        conc = min(prop_at_boundary, 1.0)  # already in [0, 1]
+        ratio_norm = min(density_ratio / 20.0, 1.0)  # cap at 20x, normalize to [0, 1]
+        affected = min(affected_frac, 1.0)
+        return 0.5 * conc + 0.3 * ratio_norm + 0.2 * affected
+
+    lower_severity = _boundary_severity(prop_at_min, lower_density_ratio, lower_affected) if lower_spike else 0.0
+    upper_severity = _boundary_severity(prop_at_max, upper_density_ratio, upper_affected) if upper_spike else 0.0
+    censoring_severity = max(lower_severity, upper_severity)
+
     censoring_flag = lower_spike or upper_spike
     details = []
     if lower_spike:
-        details.append("lower boundary spike")
+        details.append(f"lower boundary spike (severity={lower_severity:.3f})")
     if upper_spike:
-        details.append("upper boundary spike")
+        details.append(f"upper boundary spike (severity={upper_severity:.3f})")
     censoring_detail = "; ".join(details) if details else "none"
 
     return {
         "censoring_flag": censoring_flag,
+        "censoring_severity": float(censoring_severity),
         "censoring_detail": censoring_detail,
         "lower_spike": lower_spike,
         "upper_spike": upper_spike,
+        "lower_severity": float(lower_severity),
+        "upper_severity": float(upper_severity),
         "lower_boundary": float(x_min),
         "upper_boundary": float(x_max),
     }
@@ -324,12 +357,18 @@ def _compute_woe_iv(x, y, n_bins=5):
         woes.append(woe)
         iv += (dist_e - dist_ne) * woe
 
-    monotone = True
-    if len(woes) > 1:
-        diffs = np.diff(woes)
-        monotone = bool(np.all(diffs >= 0) or np.all(diffs <= 0))
+    # Monotonicity score: Spearman correlation of WOE values vs bin rank.
+    # Returns abs(rho) in [0, 1] — 1.0 = perfectly monotone, 0.0 = no trend.
+    # This replaces the old binary check which was almost always False (floor ≈ 1.0).
+    if len(woes) > 2:
+        rho, _ = stats.spearmanr(np.arange(len(woes)), woes)
+        monotone_score = abs(rho) if np.isfinite(rho) else 0.0
+    elif len(woes) == 2:
+        monotone_score = 1.0 if woes[0] != woes[1] else 0.0
+    else:
+        monotone_score = 1.0
 
-    return float(iv), woes, monotone
+    return float(iv), woes, monotone_score
 
 
 class MetricRunner:
@@ -477,11 +516,9 @@ class CategoricalMetricRunner:
             woes.append(woe)
             iv += (dist_e - dist_ne) * woe
         
-        # Monotonicity doesn't apply meaningfully to unordered categories
-        # Return False by default for categorical
-        monotone = False
-        
-        return float(iv), woes, monotone
+        # Monotonicity doesn't apply to unordered categories — return NaN
+        # so it is excluded from aggregation rather than dragging the score down.
+        return float(iv), woes, np.nan
     
     def __call__(self, x_boot, y_boot) -> dict:
         """Return metrics dict with tv_distance, ks, js, woe_profile, monotone, spearman, iv."""
