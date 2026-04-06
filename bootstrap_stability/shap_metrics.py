@@ -654,6 +654,11 @@ def aggregate_shap_metrics(
     aggregated = {metric: {"means": [], "stderrs": []} for metric in metric_names}
     
     for pool_metrics in all_pool_metrics:
+        if pool_metrics is None:
+            for metric in metric_names:
+                aggregated[metric]["means"].append(np.nan)
+                aggregated[metric]["stderrs"].append(np.nan)
+            continue
         for metric in metric_names:
             if metric in pool_metrics:
                 aggregated[metric]["means"].append(pool_metrics[metric].mean)

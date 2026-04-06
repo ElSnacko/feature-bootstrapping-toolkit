@@ -801,18 +801,33 @@ class SHAPStability:
         n_valid_pools = sum(1 for m in all_pool_metrics if m is not None)
         self._print(f"Valid pool metrics: {n_valid_pools}/{len(all_pool_metrics)}", level=1)
         
+        # Stability metrics increase with pool size (higher = more stable).
+        # The k/n^alpha + floor model expects decreasing curves (instability).
+        # Invert stability metrics to instability (1 - value) before fitting
+        # so the model can fit them properly.
+        _STABILITY_METRICS = {
+            "rank_stability_global", "rank_stability",
+            "direction_consistency", "topk_overlap",
+        }
+
         # Build learning curves
         learning_curves = {}
         for metric in SHAP_METRIC_NAMES:
+            means = list(aggregated[metric]["means"])
+            stderrs = list(aggregated[metric]["stderrs"])
+            if metric in _STABILITY_METRICS:
+                means = [1.0 - m if not np.isnan(m) else m for m in means]
             learning_curves[metric] = {
-                "means": aggregated[metric]["means"],
-                "stderr": aggregated[metric]["stderrs"],
+                "means": means,
+                "stderr": stderrs,
             }
             # Log learning curve summary
-            means = aggregated[metric]["means"]
             if means and len(means) > 0:
-                self._print(f"  {metric}: mean range [{min(means):.4f}, {max(means):.4f}]", level=2)
-        
+                valid_means = [m for m in means if not np.isnan(m)]
+                if valid_means:
+                    self._print(f"  {metric}: mean range [{min(valid_means):.4f}, {max(valid_means):.4f}]"
+                                + (" (inverted)" if metric in _STABILITY_METRICS else ""), level=2)
+
         # Fit learning curves
         self._print(f"Fitting learning curves (r2_threshold={self.r2_threshold})...", level=1)
         fitted_curves = fit_all_curves(
