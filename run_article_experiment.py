@@ -705,6 +705,7 @@ def main():
     else:
         comp_json = json.loads((OUTPUT_DIR / "validation_results.json").read_text())
         comparison = comp_json
+        comparison["comparison"] = pd.DataFrame(comp_json["per_feature"])
 
     # Stage 7
     if start <= 7:

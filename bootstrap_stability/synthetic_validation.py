@@ -172,8 +172,10 @@ class SyntheticValidation:
             - 'instability_type': Type of instability injected
             - 'instability_params': Parameters used for injection
         """
-        self._reset_rng()
-        
+        # Per-type seed so each instability type gets different but reproducible data
+        type_seed = self.random_state + list(InstabilityType).index(instability_type)
+        self._rng = np.random.RandomState(type_seed)
+
         # Generate base features from standard normal
         X = pd.DataFrame(
             self._rng.randn(n_samples, n_features),
