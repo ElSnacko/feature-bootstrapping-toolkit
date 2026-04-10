@@ -9,9 +9,21 @@ import warnings
 import numpy as np
 import pandas as pd
 from typing import Optional, List
+from joblib import Parallel, delayed
 
 from .analyzer import BootstrapStability
 from .core import get_complexity_score
+
+
+def _run_single_permutation(i, df_slim, feature_col, target_col,
+                            null_kwargs, category, base_seed):
+    """Run one permutation — top-level function for pickling (loky)."""
+    rng = np.random.RandomState(base_seed + i + 1)
+    df_perm = df_slim.copy()
+    df_perm[feature_col] = rng.permutation(df_perm[feature_col].values)
+    bs = BootstrapStability(**{**null_kwargs, "random_state": base_seed + i + 1})
+    result = bs.fit(df_perm, feature_col=feature_col, target_col=target_col)
+    return get_complexity_score(result, category)
 
 
 _AGNOSTIC_WARNING = (
@@ -47,11 +59,13 @@ class PermutationBaseline:
         alpha: float = 0.05,
         random_state: int = 42,
         verbose: int = 1,
+        n_jobs: int = -1,
     ):
         self.n_permutations = n_permutations
         self.alpha = alpha
         self.random_state = random_state
         self.verbose = verbose
+        self.n_jobs = n_jobs
 
         # Default to fast settings for null runs
         defaults = dict(
@@ -111,27 +125,27 @@ class PermutationBaseline:
 
         rng = np.random.RandomState(self.random_state)
 
+        # Only keep the columns we need — fit() extracts these immediately
+        cols = [feature_col, target_col] if target_col else [feature_col]
+        df_slim = df[cols].copy()
+
         # Observed score
         bs = BootstrapStability(**self.analyzer_kwargs)
-        observed_result = bs.fit(df, feature_col=feature_col, target_col=target_col)
+        observed_result = bs.fit(df_slim, feature_col=feature_col, target_col=target_col)
         observed = get_complexity_score(observed_result, category)
 
-        # Null distribution
-        null_scores = []
-        for i in range(self.n_permutations):
-            df_perm = df.copy()
-            df_perm[feature_col] = rng.permutation(df_perm[feature_col].values)
+        # Null distribution — parallelise across permutations using loky
+        # processes (each gets its own GIL). Inner bootstrap runs single-
+        # threaded to avoid nested parallelism.
+        null_kwargs = {**self.analyzer_kwargs, "n_jobs": 1}
 
-            bs_null = BootstrapStability(**{
-                **self.analyzer_kwargs,
-                "random_state": self.random_state + i + 1,
-            })
-            null_result = bs_null.fit(df_perm, feature_col=feature_col, target_col=target_col)
-            score = get_complexity_score(null_result, category)
-            null_scores.append(score)
-
-            if self.verbose >= 1:
-                print(f"  {feature_col} permutation {i+1}/{self.n_permutations}: {score:.6f}")
+        null_scores = Parallel(n_jobs=self.n_jobs)(
+            delayed(_run_single_permutation)(
+                i, df_slim, feature_col, target_col,
+                null_kwargs, category, self.random_state,
+            )
+            for i in range(self.n_permutations)
+        )
 
         null_scores = [s for s in null_scores if np.isfinite(s)]
         null_mean = float(np.mean(null_scores)) if null_scores else np.nan

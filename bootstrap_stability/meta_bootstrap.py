@@ -399,7 +399,7 @@ class MetaBootstrap:
         single_feature = feature_col is not None
         
         # Run splits in parallel
-        all_split_results = Parallel(n_jobs=self.n_jobs)(
+        all_split_results = Parallel(n_jobs=self.n_jobs, prefer="threads")(
             delayed(self._run_single_split)(
                 X, y, train_idx, analyzer_class, analyzer_kwargs,
                 feature_col=feature_col, target_col=target_col

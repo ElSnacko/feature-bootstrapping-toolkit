@@ -20,6 +20,7 @@ This is a diagnostic tool, not a pass/fail gate.
 | **Flexible Alpha Parameter** | Fit `alpha` from data to validate CLT assumptions | [Flexible Alpha](#flexible-alpha-parameter) |
 | **Target-Agnostic/Dependent Separation** | Separate complexity scores for credible positioning | [Complexity Score Categories](#complexity-score-categories) |
 | **Synthetic Validation Suite** | Ground truth testing with known instabilities | [Synthetic Validation](#synthetic-validation) |
+| **Permutation Baseline** | Null-calibrated significance testing for complexity scores | [Permutation Baseline](#permutation-baseline) |
 | **Reliability Scoring** | Documented formula combining stability, importance, coverage, consistency | [Reliability Scorer](#reliability-scorer) |
 | **Fixed SHAP Stability** | End-to-end SHAP complexity with proper fallbacks | [SHAP Stability Analysis](#shap-stability-analysis) |
 
@@ -30,6 +31,7 @@ This is a diagnostic tool, not a pass/fail gate.
 3. **Credible Positioning**: Separate scores for distributional vs. target-dependent metrics
 4. **Ground Truth Testing**: Validate detection capabilities with synthetic data
 5. **Explicit Reliability Formula**: Documented weighted components for auditability
+6. **Permutation Baseline**: Null-calibrated significance testing with parallelized permutation loop
 
 ---
 
@@ -49,7 +51,8 @@ This is a diagnostic tool, not a pass/fail gate.
 - **Meta-Bootstrap**: K-fold, repeated random, and bootstrap split strategies for confidence intervals
 - **Flexible Alpha**: Validate convergence rate assumptions from data
 - **Target-Agnostic/Dependent Separation**: Clear separation for credible positioning
-- **Synthetic Validation**: Four instability types with detection rate metrics
+- **Synthetic Validation**: Four instability types with permutation-calibrated detection
+- **Permutation Baseline**: Null-calibrated significance testing for complexity scores
 - **Reliability Scoring**: Weighted combination of stability, importance, coverage, consistency
 - **Train vs Holdout Drift Detection**: Grade-based drift assessment (A-F scale)
 
@@ -174,23 +177,24 @@ print(f"Grade: {reliability.grade}")  # A, B, C, D, F
 ### Synthetic Validation
 
 ```python
-from bootstrap_stability import SyntheticValidation, InstabilityType, print_synthetic_report
+from bootstrap_stability import SyntheticValidation, InstabilityType
 
 validator = SyntheticValidation(random_state=42)
 
-# Test detection of heteroscedastic noise
-result = validator.run_test(
-    test_name="heteroscedastic_test",
-    instability_type=InstabilityType.HETEROSCEDASTIC,
+# Generate data with known instabilities
+X, y, metadata = validator.generate_test_data(
     n_samples=2000,
     n_features=10,
+    instability_type=InstabilityType.HETEROSCEDASTIC,
     n_corrupted=3,
-    threshold=0.05
 )
+
+# Permutation-calibrated detection (default)
+result = validator.run_test(X, y, metadata, threshold=0.05)
 
 print(f"Detection Rate: {result.detection_rate:.1%}")
 print(f"False Positive Rate: {result.false_positive_rate:.1%}")
-print(f"F1 Score: {result.f1_score:.3f}")
+print(f"Detection Method: {result.detection_method}")
 ```
 
 ---
@@ -376,25 +380,69 @@ from bootstrap_stability import SyntheticValidation, InstabilityType
 
 validator = SyntheticValidation(random_state=42)
 
-# Run a test with known instabilities
-result = validator.run_test(
-    test_name="distribution_shift_test",
+# Generate data, then test with permutation-calibrated detection
+X, y, metadata = validator.generate_test_data(
+    n_samples=2000, n_features=10,
     instability_type=InstabilityType.DISTRIBUTION_SHIFT,
-    n_samples=2000,
-    n_features=10,
     n_corrupted=3,
-    threshold=0.05
+)
+result = validator.run_test(
+    X, y, metadata,
+    threshold=0.05,          # Significance level (alpha) for permutation test
+    use_permutation=True,    # Default: permutation-calibrated detection
+    n_permutations=30,       # Null distribution size
+    n_jobs=-1,               # Parallel permutation runs
 )
 ```
 
 **Instability Types:**
 
-| Type | Description | Detection Focus |
-|------|-------------|-----------------|
-| `HETEROSCEDASTIC` | Noise increases with feature value | Variance instability |
-| `DISTRIBUTION_SHIFT` | Mean/variance shift across samples | Distribution drift |
-| `INTERACTION` | Instability depends on another feature | Interaction effects |
-| `MISSING_NOT_AT_RANDOM` | Missingness correlated with value | Missing data patterns |
+Each type injects an influential minority (20% of samples) with target-aligned extreme values that create **structural instability** — irreducible metric variance that persists at any sample size.
+
+| Type | Mechanism | Structural Signal |
+|------|-----------|-------------------|
+| `HETEROSCEDASTIC` | Target-aligned extreme values | Spearman/IV swing with influential point inclusion |
+| `DISTRIBUTION_SHIFT` | Larger magnitude influential minority | Heavier-tailed structural instability |
+| `INTERACTION` | Partner-feature modulated magnitude | Instability clusters in partner-dependent regions |
+| `MISSING_NOT_AT_RANDOM` | Influential minority + target-dependent missingness | Combined leverage point and data loss instability |
+
+**Detection Methods:**
+
+| Method | `use_permutation` | How it works |
+|--------|-------------------|--------------|
+| Permutation-calibrated (default) | `True` | Per-feature null via `PermutationBaseline`; flags features where p < threshold |
+| Raw threshold (legacy) | `False` | Flags features where complexity score >= threshold |
+
+### Permutation Baseline
+
+#### `PermutationBaseline`
+
+Builds a null distribution of complexity scores by shuffling the feature-target relationship. Determines whether a feature's observed instability is significantly above what noise alone produces.
+
+```python
+from bootstrap_stability import PermutationBaseline
+
+perm = PermutationBaseline(
+    n_permutations=30,       # Number of null permutations
+    alpha=0.05,              # Significance level
+    random_state=42,
+    n_jobs=-1,               # Parallel permutation runs (loky processes)
+)
+
+result = perm.fit(df, feature_col="income", target_col="default_flag")
+
+print(f"Observed: {result['observed']:.4f}")
+print(f"Null mean: {result['null_mean']:.4f}")
+print(f"p-value: {result['p_value']:.3f}")
+print(f"Significant: {result['significant']}")
+
+# Panel mode: test all features
+panel = perm.fit_panel(df, target_col="default_flag")
+sig_features = panel["summary"][panel["summary"]["significant"]]
+print(f"{len(sig_features)} features significantly above null")
+```
+
+Permutations run in parallel using loky processes. Each permutation operates on a slim 2-column dataframe (feature + target only) to minimize memory overhead.
 
 ### Output Functions
 
@@ -797,6 +845,10 @@ Expected output: `mean radius` has a lower complexity score than `symmetry error
 **Alpha is estimable from data.** Setting `estimate_alpha=True` allows the convergence rate to be fit from the data, validating whether the CLT assumption (α ≈ 0.5) holds.
 
 **Complexity scores are separable.** The `complexity_scores` dict with 'overall', 'target_agnostic', and 'target_dependent' keys enables credible positioning based on what aspects of stability matter most for your use case.
+
+**Parallelism is single-level.** MetaBootstrap and PermutationBaseline run splits/permutations sequentially at the outer level with parallel pool computation at the inner level. This avoids memory multiplication from nested parallelism that causes OOM kills on constrained systems.
+
+**Permutation null calibrates "unstable".** Without a null distribution, a complexity score of 0.003 vs 0.027 is hard to interpret. The permutation baseline shuffles the target to produce a null, then tests whether the observed score is significantly above it.
 
 ---
 
