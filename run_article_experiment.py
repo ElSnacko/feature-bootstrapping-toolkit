@@ -215,7 +215,7 @@ def run_marginal(df, TARGET):
 # ════════════════════════════════════════════════════════════════════════
 # STAGE 3 — SHAP STABILITY
 # ════════════════════════════════════════════════════════════════════════
-def run_shap(df, TARGET, FEATURES):
+def run_shap(df, TARGET, FEATURES, retrain_per_bootstrap=False):
     log("\nSTAGE 3 — SHAP STABILITY (Option A)")
     X = df[FEATURES]
     y = df[TARGET]
@@ -229,7 +229,7 @@ def run_shap(df, TARGET, FEATURES):
         model_factory=lgbm_factory,
         n_resamples=SHAP_RESAMPLES, n_points=SHAP_POINTS,
         explainer_type="tree",
-        retrain_per_bootstrap=False,
+        retrain_per_bootstrap=retrain_per_bootstrap,
         random_state=42, verbose=1,
     )
 
@@ -648,6 +648,11 @@ def main():
         help="Stage to resume from (1-9). Stages before this are re-run "
              "only as needed to reconstruct live objects for later stages.",
     )
+    parser.add_argument(
+        "--shap-retrain", action="store_true", default=False,
+        help="Retrain the model per bootstrap resample in SHAP stability "
+             "(slower but measures model + explanation instability together).",
+    )
     args = parser.parse_args()
 
     start = args.start_stage
@@ -671,10 +676,10 @@ def main():
 
     # Stage 3 — needed by stages 6, 8, 9
     if start <= 3:
-        shap_panel, X, y = run_shap(df, TARGET, FEATURES)
+        shap_panel, X, y = run_shap(df, TARGET, FEATURES, args.shap_retrain)
     else:
         log("\n  [re-running stage 3 to reconstruct live objects]")
-        shap_panel, X, y = run_shap(df, TARGET, FEATURES)
+        shap_panel, X, y = run_shap(df, TARGET, FEATURES, args.shap_retrain)
 
     # Stage 4 — needed by stages 6, 9 (null_scores required for threshold calibration)
     if start <= 4:
