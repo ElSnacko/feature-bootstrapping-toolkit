@@ -34,7 +34,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, ".")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 warnings.filterwarnings("ignore")
 
 
@@ -640,7 +640,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--data-path",
-        default="../default+of+credit+card+clients/default of credit card clients.xls",
+        default=os.path.join(os.path.dirname(__file__), "..", "..", "default+of+credit+card+clients", "default of credit card clients.xls"),
         help="Path to UCI credit card default XLS file",
     )
     parser.add_argument(

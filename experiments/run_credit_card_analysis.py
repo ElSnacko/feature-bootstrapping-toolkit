@@ -22,7 +22,7 @@ matplotlib.use('Agg')
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, '.')
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 warnings.filterwarnings('ignore')
 
 from bootstrap_stability import (
@@ -75,7 +75,7 @@ log("=" * 60)
 log("LOADING DATA")
 log("=" * 60)
 
-data_path = '../default+of+credit+card+clients/default of credit card clients.xls'
+data_path = os.path.join(os.path.dirname(__file__), '..', '..', 'default+of+credit+card+clients', 'default of credit card clients.xls')
 df = pd.read_excel(data_path, header=1)
 df = df.drop(columns=['ID'])
 

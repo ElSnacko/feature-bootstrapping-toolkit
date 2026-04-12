@@ -20,7 +20,7 @@ import sys
 import os
 import warnings
 
-sys.path.insert(0, ".")
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import matplotlib
 matplotlib.use("Agg")
@@ -67,7 +67,7 @@ warnings.filterwarnings("ignore")
 # =============================================================================
 # Configuration
 # =============================================================================
-DATA_PATH = os.path.join("..", "default+of+credit+card+clients", "default of credit card clients.xls")
+DATA_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "default+of+credit+card+clients", "default of credit card clients.xls")
 OUTPUT_DIR = "."
 RANDOM_STATE = 42
 TEST_SIZE = 0.2

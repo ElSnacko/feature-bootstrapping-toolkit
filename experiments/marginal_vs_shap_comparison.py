@@ -15,6 +15,9 @@ Key scenarios to identify:
 - Agreement: Both methods agree
 """
 
+import os, sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
 import numpy as np
 import pandas as pd
 import warnings
@@ -451,7 +454,7 @@ The key insight:
         return
     
     # Load data
-    data_path = "../default+of+credit+card+clients/default of credit card clients.xls"
+    data_path = os.path.join(os.path.dirname(__file__), "..", "..", "default+of+credit+card+clients", "default of credit card clients.xls")
     df = load_credit_card_data(data_path)
     
     # Create temporal split
