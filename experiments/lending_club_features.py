@@ -404,40 +404,102 @@ def build_features(df, sample_n=None, random_state=42):
     return features, target, feature_groups
 
 
+# Columns needed from the raw CSV
+NEEDED_COLS = [
+    "loan_status", "loan_amnt", "funded_amnt", "term", "int_rate",
+    "installment", "emp_length", "annual_inc", "dti",
+    "delinq_2yrs", "fico_range_low", "fico_range_high",
+    "inq_last_6mths", "mths_since_last_delinq", "mths_since_last_record",
+    "open_acc", "pub_rec", "revol_bal", "revol_util", "total_acc",
+    "collections_12_mths_ex_med", "mths_since_last_major_derog",
+    "acc_open_past_24mths", "avg_cur_bal", "bc_open_to_buy", "bc_util",
+    "mo_sin_old_il_acct", "mo_sin_old_rev_tl_op", "mo_sin_rcnt_rev_tl_op",
+    "mo_sin_rcnt_tl", "mort_acc", "mths_since_recent_bc",
+    "mths_since_recent_inq", "num_accts_ever_120_pd",
+    "num_actv_bc_tl", "num_actv_rev_tl", "num_bc_tl",
+    "num_il_tl", "num_rev_accts", "num_tl_30dpd", "num_tl_90g_dpd_24m",
+    "pct_tl_nvr_dlq", "percent_bc_gt_75", "pub_rec_bankruptcies",
+    "tot_coll_amt", "tot_cur_bal", "tot_hi_cred_lim",
+    "total_bal_ex_mort", "total_bal_il", "total_bc_limit",
+    "total_il_high_credit_limit", "total_rev_hi_lim",
+    "all_util", "il_util", "inq_last_12m",
+    "open_rv_12m", "open_il_12m", "num_rev_tl_bal_gt_0",
+    "mths_since_recent_bc_dlq", "mths_since_recent_revol_delinq",
+    "num_tl_120dpd_2m",
+    "issue_d",
+]
+
+
 def load_lending_club(path, sample_n=None, random_state=42):
-    """Convenience: load CSV and build features in one call.
-
-    If sample_n is set, we read the full file but subsample early to
-    keep memory manageable on large datasets (2M+ rows).
-    """
+    """Convenience: load CSV and build features in one call."""
     print(f"  Loading {path} ...")
-
-    # Only load columns we actually use to keep memory down
-    NEEDED_COLS = [
-        "loan_status", "loan_amnt", "funded_amnt", "term", "int_rate",
-        "installment", "emp_length", "annual_inc", "dti",
-        "delinq_2yrs", "fico_range_low", "fico_range_high",
-        "inq_last_6mths", "mths_since_last_delinq", "mths_since_last_record",
-        "open_acc", "pub_rec", "revol_bal", "revol_util", "total_acc",
-        "collections_12_mths_ex_med", "mths_since_last_major_derog",
-        "acc_open_past_24mths", "avg_cur_bal", "bc_open_to_buy", "bc_util",
-        "mo_sin_old_il_acct", "mo_sin_old_rev_tl_op", "mo_sin_rcnt_rev_tl_op",
-        "mo_sin_rcnt_tl", "mort_acc", "mths_since_recent_bc",
-        "mths_since_recent_inq", "num_accts_ever_120_pd",
-        "num_actv_bc_tl", "num_actv_rev_tl", "num_bc_tl",
-        "num_il_tl", "num_rev_accts", "num_tl_30dpd", "num_tl_90g_dpd_24m",
-        "pct_tl_nvr_dlq", "percent_bc_gt_75", "pub_rec_bankruptcies",
-        "tot_coll_amt", "tot_cur_bal", "tot_hi_cred_lim",
-        "total_bal_ex_mort", "total_bal_il", "total_bc_limit",
-        "total_il_high_credit_limit", "total_rev_hi_lim",
-        "all_util", "il_util", "inq_last_12m",
-        "open_rv_12m", "open_il_12m", "num_rev_tl_bal_gt_0",
-        "mths_since_recent_bc_dlq", "mths_since_recent_revol_delinq",
-        "num_tl_120dpd_2m",
-    ]
-
     df = pd.read_csv(path, usecols=NEEDED_COLS, low_memory=False)
     return build_features(df, sample_n=sample_n, random_state=random_state)
+
+
+def load_lending_club_temporal(
+    path,
+    dev_end="Dec-2016",
+    holdout_start="Jan-2017",
+    sample_n=None,
+    random_state=42,
+):
+    """Load LC data with a temporal split for out-of-time validation.
+
+    Parameters
+    ----------
+    path : str
+        Path to accepted loans CSV.
+    dev_end : str
+        Last month in development period (format "Mon-YYYY").
+    holdout_start : str
+        First month in holdout period (format "Mon-YYYY").
+    sample_n : int or None
+        Subsample per period (applied independently).
+    random_state : int
+
+    Returns
+    -------
+    dev_features, dev_target, ho_features, ho_target, feature_groups
+    """
+    print(f"  Loading {path} (temporal split) ...")
+    df = pd.read_csv(path, usecols=NEEDED_COLS, low_memory=False)
+
+    # Parse issue date
+    # Filter to terminal loan statuses before splitting
+    df = define_target(df)
+
+    # Parse issue date and split temporally
+    df["issue_dt"] = pd.to_datetime(df["issue_d"], format="%b-%Y", errors="coerce")
+    n_before = len(df)
+    df = df.dropna(subset=["issue_dt"])
+    if len(df) < n_before:
+        print(f"  Dropped {n_before - len(df)} rows with unparseable issue_d")
+
+    dev_cutoff = pd.to_datetime(dev_end, format="%b-%Y")
+    ho_cutoff = pd.to_datetime(holdout_start, format="%b-%Y")
+
+    dev_df = df[df["issue_dt"] <= dev_cutoff].copy()
+    ho_df = df[df["issue_dt"] >= ho_cutoff].copy()
+
+    print(f"  Dev period: {dev_df['issue_dt'].min():%Y-%m} to {dev_df['issue_dt'].max():%Y-%m}  "
+          f"({len(dev_df):,} loans)")
+    print(f"  Holdout period: {ho_df['issue_dt'].min():%Y-%m} to {ho_df['issue_dt'].max():%Y-%m}  "
+          f"({len(ho_df):,} loans)")
+
+    # Build features independently per period to avoid leakage.
+    # define_target already ran above, so skip it inside build_features
+    # by passing pre-filtered data that still has the 'default' column.
+    print("  Building dev features ...")
+    dev_features, dev_target, feature_groups = build_features(
+        dev_df, sample_n=sample_n, random_state=random_state,
+    )
+    print("  Building holdout features ...")
+    ho_features, ho_target, _ = build_features(
+        ho_df, sample_n=sample_n, random_state=random_state + 1,
+    )
+
+    return dev_features, dev_target, ho_features, ho_target, feature_groups
 
 
 if __name__ == "__main__":

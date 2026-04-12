@@ -35,7 +35,7 @@ import pandas as pd
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 warnings.filterwarnings("ignore")
 
-from lending_club_features import load_lending_club, FEATURE_GROUPS
+from lending_club_features import load_lending_club, load_lending_club_temporal, FEATURE_GROUPS
 
 from bootstrap_stability import (
     BootstrapStability,
@@ -452,11 +452,192 @@ def run_drift(X, y):
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# STAGE 8b — TEMPORAL VALIDATION (out-of-time)
+# ═══════════════════════════════════════════════════════════════════════
+def run_temporal_validation(data_path, marginal_panel):
+    """Validate that dev-period complexity scores predict holdout-period degradation."""
+    log("\nSTAGE 8b — TEMPORAL VALIDATION (out-of-time)")
+    from scipy.stats import spearmanr, mannwhitneyu
+    from bootstrap_stability.core import (
+        MetricRunner, CategoricalMetricRunner, detect_feature_type,
+        DEFAULT_WEIGHTS,
+    )
+
+    # ── Step 1: load temporal split ──────────────────────────────────
+    dev_feats, dev_target, ho_feats, ho_target, _ = load_lending_club_temporal(
+        data_path, dev_end="Dec-2016", holdout_start="Jan-2017",
+        sample_n=SAMPLE_N, random_state=42,
+    )
+
+    # Align columns (some may have been dropped differently per period)
+    common_cols = sorted(set(dev_feats.columns) & set(ho_feats.columns))
+    dev_feats = dev_feats[common_cols]
+    ho_feats = ho_feats[common_cols]
+    log(f"  {len(common_cols)} common features across periods")
+
+    # ── Step 2: compute holdout-vs-dev metrics per feature ───────────
+    log("  Computing temporal shift metrics ...")
+    temporal_metrics = {}
+    for feat in common_cols:
+        x_dev = dev_feats[feat].values
+        y_dev = dev_target.values
+        x_ho = ho_feats[feat].values
+        y_ho = ho_target.values
+
+        feat_type = detect_feature_type(x_dev)
+        if feat_type == "categorical":
+            runner = CategoricalMetricRunner(x_dev, y_dev)
+        else:
+            runner = MetricRunner(x_dev, y_dev)
+
+        result = runner(x_ho, y_ho)
+        temporal_metrics[feat] = result
+
+    # ── Step 3: build comparison dataframe ────────────────────────────
+    dist_w = DEFAULT_WEIGHTS["distributional"]
+    td_w = DEFAULT_WEIGHTS["target_dependent"]
+
+    rows = []
+    m_results = marginal_panel["feature_results"]
+    for feat in common_cols:
+        if feat not in m_results:
+            continue
+        mr = m_results[feat]
+        floors = mr.get("per_metric_floors", {})
+        tm = temporal_metrics[feat]
+
+        # Compute holdout composite using same weighting as complexity score
+        total_w = 0.0
+        weighted_sum = 0.0
+        for metric, w in {**dist_w, **td_w}.items():
+            val = tm.get(metric)
+            if val is not None and np.isfinite(val):
+                weighted_sum += w * abs(val)
+                total_w += w
+        holdout_composite = weighted_sum / total_w if total_w > 0 else np.nan
+
+        rows.append({
+            "feature": feat,
+            "complexity_score": mr["complexity_score"],
+            "wasserstein_floor": floors.get("wasserstein", np.nan),
+            "spearman_floor": floors.get("spearman", np.nan),
+            "iv_floor": floors.get("iv", np.nan),
+            "ks_floor": floors.get("ks", np.nan),
+            "js_floor": floors.get("js", np.nan),
+            "holdout_wasserstein": tm.get("wasserstein", np.nan),
+            "holdout_ks": tm.get("ks", np.nan),
+            "holdout_js": tm.get("js", np.nan),
+            "holdout_spearman": tm.get("spearman", np.nan),
+            "holdout_iv": tm.get("iv", np.nan),
+            "holdout_composite": holdout_composite,
+        })
+
+    comp_df = pd.DataFrame(rows)
+    comp_df.to_csv(OUTPUT_DIR / "temporal_validation_comparison.csv", index=False)
+
+    # ── Step 4: validation statistics ─────────────────────────────────
+    valid = comp_df.dropna(subset=["complexity_score", "holdout_composite"])
+
+    # Primary correlation
+    rho_overall, p_overall = spearmanr(valid["complexity_score"], valid["holdout_composite"])
+    log(f"  Overall: rho={rho_overall:.3f}  p={p_overall:.4f}")
+
+    # Per-metric correlations
+    per_metric_corr = {}
+    for metric in ["wasserstein", "ks", "js", "spearman", "iv"]:
+        floor_col = f"{metric}_floor"
+        ho_col = f"holdout_{metric}"
+        sub = valid.dropna(subset=[floor_col, ho_col])
+        if len(sub) >= 5:
+            rho, p = spearmanr(sub[floor_col], sub[ho_col])
+            per_metric_corr[metric] = {"rho": float(rho), "p_value": float(p), "n": len(sub)}
+            log(f"    {metric}: rho={rho:.3f}  p={p:.4f}  n={len(sub)}")
+        else:
+            per_metric_corr[metric] = {"rho": np.nan, "p_value": np.nan, "n": len(sub)}
+
+    # Group test: stable vs unstable
+    threshold = valid["complexity_score"].median()
+    stable = valid[valid["complexity_score"] <= threshold]
+    unstable = valid[valid["complexity_score"] > threshold]
+
+    if len(stable) >= 3 and len(unstable) >= 3:
+        U, p_group = mannwhitneyu(
+            unstable["holdout_composite"], stable["holdout_composite"],
+            alternative="greater",
+        )
+        group_result = {
+            "threshold": float(threshold),
+            "stable_mean": float(stable["holdout_composite"].mean()),
+            "unstable_mean": float(unstable["holdout_composite"].mean()),
+            "n_stable": len(stable),
+            "n_unstable": len(unstable),
+            "U_statistic": float(U),
+            "p_value": float(p_group),
+        }
+        log(f"  Group test: stable={group_result['stable_mean']:.4f}  "
+            f"unstable={group_result['unstable_mean']:.4f}  "
+            f"p={p_group:.4f}")
+    else:
+        group_result = {"error": "too few features in one group"}
+
+    # ── Step 5: figures ───────────────────────────────────────────────
+    # Scatter: complexity_score vs holdout_composite
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.scatter(valid["complexity_score"], valid["holdout_composite"],
+               alpha=0.7, edgecolors="k", linewidths=0.5)
+    for _, row in valid.iterrows():
+        ax.annotate(row["feature"], (row["complexity_score"], row["holdout_composite"]),
+                    fontsize=5, alpha=0.6)
+    ax.set_xlabel("Dev-Period Complexity Score (floor)")
+    ax.set_ylabel("Holdout-Period Metric Degradation")
+    ax.set_title(f"Temporal Validation: rho={rho_overall:.3f}  p={p_overall:.4f}")
+    # Trend line
+    if len(valid) >= 5:
+        z = np.polyfit(valid["complexity_score"], valid["holdout_composite"], 1)
+        x_line = np.linspace(valid["complexity_score"].min(), valid["complexity_score"].max(), 50)
+        ax.plot(x_line, np.polyval(z, x_line), "r--", alpha=0.5)
+    fig.tight_layout()
+    fig.savefig(str(OUTPUT_DIR / "fig_temporal_scatter.png"), dpi=150)
+    plt.close(fig)
+    log(f"  saved  {OUTPUT_DIR / 'fig_temporal_scatter.png'}")
+
+    # Box plot: stable vs unstable
+    fig, ax = plt.subplots(figsize=(6, 5))
+    box_data = [stable["holdout_composite"].values, unstable["holdout_composite"].values]
+    bp = ax.boxplot(box_data, labels=["Stable", "Unstable"], patch_artist=True)
+    bp["boxes"][0].set_facecolor("#2ecc71")
+    bp["boxes"][1].set_facecolor("#e74c3c")
+    if "p_value" in group_result:
+        ax.set_title(f"Holdout Degradation by Stability Group  (p={group_result['p_value']:.4f})")
+    else:
+        ax.set_title("Holdout Degradation by Stability Group")
+    ax.set_ylabel("Holdout Composite Metric")
+    fig.tight_layout()
+    fig.savefig(str(OUTPUT_DIR / "fig_temporal_boxplot.png"), dpi=150)
+    plt.close(fig)
+    log(f"  saved  {OUTPUT_DIR / 'fig_temporal_boxplot.png'}")
+
+    # ── Assemble results ──────────────────────────────────────────────
+    temporal_results = {
+        "dev_period": "2007-01 to 2016-12",
+        "holdout_period": "2017-01 to 2018-12",
+        "n_features": len(valid),
+        "overall_correlation": {"rho": float(rho_overall), "p_value": float(p_overall)},
+        "per_metric_correlations": per_metric_corr,
+        "group_test": group_result,
+        "per_feature": comp_df.to_dict(orient="records"),
+    }
+    save_json(temporal_results, "temporal_validation_results.json")
+    return temporal_results
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # STAGE 9 — SYNTHESIS
 # ═══════════════════════════════════════════════════════════════════════
 def write_synthesis(
     eda, marginal_panel, shap_panel, perm_results,
-    ci_results, comparison, synthetic_results, drift, feature_groups,
+    ci_results, comparison, synthetic_results, drift,
+    feature_groups, temporal_results=None,
 ):
     log("\nSTAGE 9 — WRITING SYNTHESIS")
 
@@ -513,12 +694,20 @@ def write_synthesis(
     # SHAP stability
     w("## SHAP (Model-Decision) Stability")
     w()
-    w("| Feature | SHAP Complexity | Direction Consistency | Rank Stability |")
-    w("|---------|----------------|----------------------|----------------|")
+    w("| Feature | SHAP Complexity | Constant SHAP | Direction Consistency | Rank Stability |")
+    w("|---------|----------------|---------------|----------------------|----------------|")
     for _, row in s_summary.iterrows():
+        const_flag = "yes" if row.get("constant_shap", False) else ""
         w(f"| {row['feature']} | {row['complexity_score']:.3f} | "
+          f"{const_flag} | "
           f"{row.get('direction_consistency', float('nan')):.3f} | "
           f"{row.get('rank_stability', float('nan')):.3f} |")
+    n_const = s_summary["constant_shap"].sum() if "constant_shap" in s_summary.columns else 0
+    if n_const > 0:
+        const_list = s_summary.loc[s_summary["constant_shap"] == True, "feature"].tolist()
+        w()
+        w(f"*{n_const} features have constant SHAP values (model assigns no importance): "
+          f"{', '.join(const_list)}. Stability metrics for these are degenerate.*")
     w()
 
     # Meta-bootstrap CIs
@@ -563,12 +752,52 @@ def write_synthesis(
     w()
 
     # Drift
-    w("## Train/Holdout Drift")
+    w("## Train/Holdout Drift (Random Split)")
     w()
     grade = drift.get("drift_grade", "?")
     score = drift.get("overall_drift_score", float("nan"))
     w(f"Grade: **{grade}** (score = {score:.4f})")
     w()
+
+    # Temporal validation
+    if temporal_results is not None:
+        w("## Temporal Validation (Out-of-Time)")
+        w()
+        w(f"**Development**: {temporal_results['dev_period']} | "
+          f"**Holdout**: {temporal_results['holdout_period']}")
+        w()
+        oc = temporal_results["overall_correlation"]
+        w(f"Spearman correlation between dev-period complexity score and "
+          f"holdout-period degradation: **rho = {oc['rho']:.3f}** (p = {oc['p_value']:.4f})")
+        w()
+        w("### Per-metric floor-to-degradation correlations")
+        w()
+        w("| Metric | rho | p-value | n |")
+        w("|--------|-----|---------|---|")
+        for metric, mc in temporal_results["per_metric_correlations"].items():
+            w(f"| {metric} | {mc['rho']:.3f} | {mc['p_value']:.4f} | {mc['n']} |")
+        w()
+        gt = temporal_results["group_test"]
+        if "error" not in gt:
+            w("### Stable vs Unstable group comparison")
+            w()
+            w(f"Threshold (median complexity): {gt['threshold']:.4f}")
+            w()
+            w(f"| Group | n | Mean Holdout Degradation |")
+            w(f"|-------|---|--------------------------|")
+            w(f"| Stable | {gt['n_stable']} | {gt['stable_mean']:.4f} |")
+            w(f"| Unstable | {gt['n_unstable']} | {gt['unstable_mean']:.4f} |")
+            w()
+            w(f"Mann-Whitney U (one-sided): p = {gt['p_value']:.4f}")
+            w()
+            if gt["p_value"] < 0.05:
+                w("*Features flagged as structurally unstable in the development period "
+                  "show significantly higher metric degradation in the holdout period. "
+                  "The toolkit's pre-deployment diagnostic is a validated temporal prediction.*")
+            else:
+                w("*The group difference is not statistically significant at p < 0.05. "
+                  "This may reflect limited feature count or the specific temporal split chosen.*")
+        w()
 
     # Files
     w("## Files Generated")
@@ -662,10 +891,18 @@ def main():
     else:
         drift = json.loads((OUTPUT_DIR / "drift_results.json").read_text())
 
+    # Stage 8b — Temporal validation
+    if start <= 8:
+        temporal_results = run_temporal_validation(args.data_path, marginal_panel)
+    else:
+        tv_path = OUTPUT_DIR / "temporal_validation_results.json"
+        temporal_results = json.loads(tv_path.read_text()) if tv_path.exists() else None
+
     # Stage 9
     write_synthesis(
         eda, marginal_panel, shap_panel, perm_results,
-        ci_results, comparison, synthetic_results, drift, feature_groups,
+        ci_results, comparison, synthetic_results, drift,
+        feature_groups, temporal_results,
     )
 
     log()

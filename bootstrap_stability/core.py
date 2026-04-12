@@ -5,7 +5,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 from scipy import stats
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit, OptimizeWarning
 from scipy.spatial.distance import jensenshannon
 
 logger = logging.getLogger(__name__)
@@ -750,12 +750,14 @@ def fit_learning_curve(
 
     try:
         # First, fit with fixed alpha (for baseline R²)
-        popt_fixed, _ = curve_fit(
-            _curve_fn_fixed_alpha, pool_sizes, means,
-            p0=[1.0, means.min()],
-            maxfev=5000,
-            bounds=([-np.inf, -np.inf], [np.inf, np.inf])
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", OptimizeWarning)
+            popt_fixed, _ = curve_fit(
+                _curve_fn_fixed_alpha, pool_sizes, means,
+                p0=[1.0, means.min()],
+                maxfev=5000,
+                bounds=([-np.inf, -np.inf], [np.inf, np.inf])
+            )
         k_fixed, floor_fixed = popt_fixed
         predicted_fixed = _curve_fn_fixed_alpha(pool_sizes, k_fixed, floor_fixed)
         r2_fixed = _compute_r2(means, predicted_fixed)
@@ -763,13 +765,15 @@ def fit_learning_curve(
         if estimate_alpha:
             # Fit with flexible alpha
             try:
-                popt_flex, _ = curve_fit(
-                    _curve_fn_flexible_alpha, pool_sizes, means,
-                    p0=[k_fixed, floor_fixed, fixed_alpha],
-                    maxfev=5000,
-                    bounds=([-np.inf, -np.inf, alpha_bounds[0]],
-                           [np.inf, np.inf, alpha_bounds[1]])
-                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", OptimizeWarning)
+                    popt_flex, _ = curve_fit(
+                        _curve_fn_flexible_alpha, pool_sizes, means,
+                        p0=[k_fixed, floor_fixed, fixed_alpha],
+                        maxfev=5000,
+                        bounds=([-np.inf, -np.inf, alpha_bounds[0]],
+                               [np.inf, np.inf, alpha_bounds[1]])
+                    )
                 k, floor, alpha = popt_flex
                 predicted = _curve_fn_flexible_alpha(pool_sizes, k, floor, alpha)
                 r2 = _compute_r2(means, predicted)

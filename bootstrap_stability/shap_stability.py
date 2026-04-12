@@ -733,13 +733,22 @@ class SHAPStability:
             
             # Check for degenerate SHAP values (all zeros or constant)
             shap_std = np.std(reference_shap, axis=0)
-            n_constant = np.sum(shap_std < 1e-10)
+            constant_mask = shap_std < 1e-10
+            n_constant = int(np.sum(constant_mask))
+            constant_shap_features = set()
             if n_constant == n_features:
                 self._print("WARNING: All SHAP values are constant (zero variance)", level=1)
                 self._print("  This may indicate a model that doesn't use the features", level=1)
+                constant_shap_features = set(feature_names)
             elif n_constant > 0:
-                self._print(f"WARNING: {n_constant}/{n_features} features have constant SHAP values", level=1)
-            
+                constant_shap_features = {feature_names[i] for i in np.where(constant_mask)[0]}
+                self._print(
+                    f"Note: {n_constant}/{n_features} features have constant "
+                    f"SHAP values (model assigns no importance): "
+                    f"{sorted(constant_shap_features)}",
+                    level=1,
+                )
+
             self._print(f"Reference SHAP computed: shape={reference_shap.shape}", level=1)
             
         except Exception as e:
@@ -780,11 +789,11 @@ class SHAPStability:
         for pool_idx, n_pool, shap_values_list, degen_count in pool_outputs:
             degen_rate = degen_count / self.n_resamples if self.n_resamples > 0 else 0.0
             degenerate_rates[int(n_pool)] = degen_rate
-            
+
             if not shap_values_list:
                 all_pool_metrics.append(None)
                 continue
-            
+
             # Compute metrics
             metrics = metric_runner.compute_all_metrics(shap_values_list)
             all_pool_metrics.append(metrics)
@@ -897,6 +906,7 @@ class SHAPStability:
             "complexity_scores": complexity_scores,
             "per_metric_floors": per_metric_floors,
             "feature_results": feature_results,
+            "constant_shap_features": constant_shap_features,
             "degenerate_rates": degenerate_rates,
             "raw_shap": raw_shap,
         }
@@ -1234,9 +1244,10 @@ class SHAPStability:
             Results with 'feature_results' and 'summary' DataFrame.
         """
         results = self.fit(X, y, feature_names)
-        
-        # Get the overall complexity score from fit results
+
+        # Get the overall complexity score and constant-SHAP set from fit results
         overall_complexity = results.get("complexity_score", np.nan)
+        constant_shap_features = results.get("constant_shap_features", set())
         
         # Flatten metric weights for per-feature complexity computation
         all_weights = {
@@ -1265,9 +1276,11 @@ class SHAPStability:
                 total_w += weight
             feat_complexity = weighted_instab / total_w if total_w > 0 else overall_complexity
 
+            feat_name = feat_result["feature"]
             row = {
-                "feature": feat_result["feature"],
+                "feature": feat_name,
                 "complexity_score": feat_complexity,
+                "constant_shap": feat_name in constant_shap_features,
                 "direction_consistency": feat_result.get("direction_consistency_mean", np.nan),
                 "rank_stability": feat_result.get("rank_stability_mean", np.nan),
                 "wasserstein": feat_result.get("wasserstein_mean", np.nan),
