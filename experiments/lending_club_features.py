@@ -304,15 +304,6 @@ def _loan_level_risk(df):
         df["annual_inc"].clip(lower=1),
     )
 
-    # Interest rate (numeric)
-    out["int_rate"] = pd.to_numeric(
-        df["int_rate"].astype(str).str.replace("%", ""),
-        errors="coerce",
-    ).fillna(df["int_rate"].median() if df["int_rate"].dtype == float else 13.0)
-
-    # Term (binary: 60-month = higher risk)
-    out["term_60m"] = df["term"].astype(str).str.contains("60").astype(int)
-
     # Employment length (numeric years)
     out["emp_length_yrs"] = _parse_emp_length(df["emp_length"])
 
