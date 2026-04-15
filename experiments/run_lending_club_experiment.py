@@ -96,9 +96,9 @@ META_SPLITS = 10
 
 # Forward CV feature selection (Stage 2b)
 FWD_CV_FOLDS = 5
-FWD_CORR_THRESHOLD = 0.70    # max |r| to flag a candidate as collinear
-FWD_MIN_AUC_GAIN = 0.001     # minimum ΔAUCroc to admit a feature
-FWD_COLLINEAR_AUC_PREMIUM = 0.005  # extra ΔAUC required when max|r| > threshold
+FWD_VIF_THRESHOLD = 5.0      # incremental VIF above which a candidate is collinear
+FWD_MIN_AUC_GAIN = 0.005     # minimum ΔAUCroc to admit a feature
+FWD_COLLINEAR_AUC_PREMIUM = 0.005  # extra ΔAUC required when incremental VIF > threshold
 
 # Deep-dive features (one per behavioural theme)
 DEEP_DIVE = [
@@ -343,19 +343,25 @@ def run_forward_cv_selection(
 
     ALGORITHM
     ---------
-    1. Rank all candidates by marginal complexity score (most-stable first),
-       so the greedy path favours distributional reliability.
+    1. Compute the initial VIF of every candidate using the full feature
+       matrix.  Sort candidates ascending by VIF so the most orthogonal
+       features enter first.  This ordering is independent of marginal
+       stability scores, making the selection orthogonal to Stage 2.
     2. Maintain a growing selected set S (initially empty).
-    3. For each candidate f (in ranked order):
-         a. Compute max pairwise |Pearson r| of f with every feature in S.
+    3. For each candidate f (in ascending-VIF order):
+         a. Compute the *incremental* VIF of f given S: regress f on all
+            features already in S and derive VIF = 1/(1−R²).  This
+            captures multivariate collinearity — how much of f's variance
+            the joint linear combination of S already explains — rather
+            than the maximum of pairwise correlations.
          b. Evaluate CV metrics (AUC, Gini, KS, Brier) for S ∪ {f}.
          c. Compute ΔAUC = AUC(S ∪ {f}) − AUC(S).
          d. Admit f if ΔAUC ≥ required_gain, where:
               required_gain = FWD_MIN_AUC_GAIN
-                            + FWD_COLLINEAR_AUC_PREMIUM  (if max|r| > threshold)
-            This means a collinear feature must prove additional unique
-            predictive signal to earn its place.
-    4. Compute VIF for the final selected set.
+                            + FWD_COLLINEAR_AUC_PREMIUM  (if incremental VIF > threshold)
+            A collinear feature must prove unique predictive signal beyond
+            what S already captures.
+    4. Compute VIF for the final selected set as a post-hoc audit.
 
     OPTIMISATION METRIC
     -------------------
@@ -391,13 +397,19 @@ def run_forward_cv_selection(
     # Fill NaN with column median so LightGBM sees complete rows every fold.
     X_full = df[FEATURES].copy().fillna(df[FEATURES].median())
 
-    # ── rank candidates: stable features enter first ──────────────────
-    m_results = marginal_panel["feature_results"]
-    candidates = sorted(
-        FEATURES,
-        key=lambda f: m_results.get(f, {}).get("complexity_score", np.inf),
-    )
-    log(f"  {len(candidates)} candidates ordered by marginal complexity (stable → unstable)")
+    # ── rank candidates by ascending initial VIF ─────────────────────
+    # Ordering is intentionally independent of marginal stability scores
+    # so that Stage 2b is orthogonal to Stage 2.  Features with low VIF
+    # in the full feature matrix are most orthogonal to the rest; they
+    # enter first and form the stable core of the selected set.
+    log("  Computing initial VIF for candidate ordering ...")
+    initial_vif = {
+        row["feature"]: (row["vif"] if row["vif"] is not None else np.inf)
+        for row in _compute_vif(X_full)
+    }
+    candidates = sorted(FEATURES, key=lambda f: initial_vif.get(f, np.inf))
+    log(f"  {len(candidates)} candidates ordered by ascending VIF "
+        f"(low VIF = orthogonal, enters first)")
 
     cv = StratifiedKFold(n_splits=FWD_CV_FOLDS, shuffle=True, random_state=42)
 
@@ -417,12 +429,34 @@ def run_forward_cv_selection(
         brier = float(brier_score_loss(y, probas))
         return {"auc": auc, "gini": gini, "ks": ks, "brier": brier}
 
-    def _max_corr(feat: str, selected: list) -> float:
-        """Max absolute Pearson correlation of feat with each selected feature."""
+    def _incremental_vif(feat: str, selected: list) -> float:
+        """
+        VIF of feat when tentatively added to the current selected set.
+
+        Regresses feat on the joint linear span of selected features and
+        returns VIF = 1 / (1 − R²).  Captures multivariate collinearity:
+        a high value means selected already explains most of feat's
+        variance, so feat contributes little orthogonal signal.
+
+        VIF > 5  → moderate collinearity (requires AUC premium to admit)
+        VIF > 10 → severe collinearity
+        """
         if not selected:
-            return 0.0
-        x = X_full[feat]
-        return float(max(abs(x.corr(X_full[s])) for s in selected))
+            return 1.0
+        X_others = X_full[selected].values.astype(float)
+        x_feat = X_full[feat].values.astype(float)
+        # Centre for numerical stability
+        X_others = X_others - X_others.mean(axis=0)
+        x_feat = x_feat - x_feat.mean()
+        ss_tot = float(np.dot(x_feat, x_feat))
+        if ss_tot == 0.0:
+            return 1.0
+        if np.linalg.matrix_rank(X_others) < X_others.shape[1]:
+            return np.inf
+        coef, _, _, _ = np.linalg.lstsq(X_others, x_feat, rcond=None)
+        ss_res = float(np.sum((x_feat - X_others @ coef) ** 2))
+        r2 = max(0.0, min(1.0 - ss_res / ss_tot, 1.0 - 1e-9))
+        return 1.0 / (1.0 - r2)
 
     # ── greedy forward pass ───────────────────────────────────────────
     selected: list = []
@@ -433,36 +467,38 @@ def run_forward_cv_selection(
     log(f"  Baseline (empty set): AUC={baseline['auc']:.4f}")
     step_results.append({
         "step": 0, "feature": None, "action": None,
-        "selected_count": 0, "max_corr_with_selected": None,
+        "selected_count": 0, "incremental_vif": None,
         "is_collinear": None, "auc_gain": None,
         **{f"cv_{k}": v for k, v in baseline.items()},
     })
     current = baseline
 
     for step_idx, feat in enumerate(candidates, start=1):
-        max_r = _max_corr(feat, selected)
-        is_collinear = max_r > FWD_CORR_THRESHOLD
+        inc_vif = _incremental_vif(feat, selected)
+        is_collinear = np.isfinite(inc_vif) and inc_vif > FWD_VIF_THRESHOLD
 
         trial = _cv_metrics(selected + [feat])
         delta = trial["auc"] - current["auc"]
         required = FWD_MIN_AUC_GAIN + (FWD_COLLINEAR_AUC_PREMIUM if is_collinear else 0.0)
+
+        vif_str = f"{inc_vif:.2f}" if np.isfinite(inc_vif) else "inf"
 
         if delta >= required:
             selected.append(feat)
             current = trial
             action = "add"
             log(f"  [{step_idx:2d}] ADD  {feat:<35s}"
-                f"  AUC={trial['auc']:.4f}  Δ={delta:+.4f}  max|r|={max_r:.3f}")
+                f"  AUC={trial['auc']:.4f}  Δ={delta:+.4f}  VIF={vif_str}")
         else:
             reason = (
-                f"collinear|max_r={max_r:.3f}"
+                f"collinear|VIF={vif_str}"
                 if is_collinear
                 else f"no_gain|Δ={delta:.4f}"
             )
             dropped.append({
                 "feature": feat,
                 "reason": reason,
-                "max_corr_with_selected": max_r,
+                "incremental_vif": float(inc_vif) if np.isfinite(inc_vif) else None,
                 "auc_gain": delta,
                 "is_collinear": is_collinear,
                 "marginal_complexity": float(
@@ -471,14 +507,14 @@ def run_forward_cv_selection(
             })
             action = "drop"
             log(f"  [{step_idx:2d}] DROP {feat:<35s}"
-                f"  Δ={delta:+.4f}  max|r|={max_r:.3f}  [{reason}]")
+                f"  Δ={delta:+.4f}  VIF={vif_str}  [{reason}]")
 
         step_results.append({
             "step": step_idx,
             "feature": feat,
             "action": action,
             "selected_count": len(selected),
-            "max_corr_with_selected": float(max_r),
+            "incremental_vif": float(inc_vif) if np.isfinite(inc_vif) else None,
             "is_collinear": bool(is_collinear),
             "auc_gain": float(delta),
             **{f"cv_{k}": v for k, v in trial.items()},
@@ -508,9 +544,11 @@ def run_forward_cv_selection(
         "vif_report": vif_report,
         "config": {
             "cv_folds": FWD_CV_FOLDS,
-            "corr_threshold": FWD_CORR_THRESHOLD,
+            "vif_threshold": FWD_VIF_THRESHOLD,
             "min_auc_gain": FWD_MIN_AUC_GAIN,
             "collinear_auc_premium": FWD_COLLINEAR_AUC_PREMIUM,
+            "candidate_ordering": "ascending_initial_vif",
+            "collinearity_check": "incremental_vif",
             "optimisation_metric": "auc",
             "alternative_metrics": {
                 "gini": "2*AUC-1; same ordering, preferred in regulatory scorecards",
@@ -983,7 +1021,10 @@ def write_synthesis(
         w(f"**Optimisation metric**: {cfg.get('optimisation_metric', 'auc').upper()} "
           f"(CV folds={cfg.get('cv_folds', '?')})")
         w()
-        w(f"**Collinearity threshold**: max |r| > {cfg.get('corr_threshold', '?')} "
+        w(f"**Candidate ordering**: {cfg.get('candidate_ordering', '?')} "
+          f"(orthogonal to marginal stability)")
+        w()
+        w(f"**Collinearity check**: incremental VIF > {cfg.get('vif_threshold', '?')} "
           f"requires +{cfg.get('collinear_auc_premium', '?'):.3f} ΔAUC premium")
         w()
         w(f"**Result**: {fwd_result['n_selected']} features selected, "
@@ -1006,11 +1047,13 @@ def write_synthesis(
         if dropped:
             w("### Dropped features")
             w()
-            w("| Feature | Reason | max\\|r\\| | ΔAUC | Marginal Complexity |")
-            w("|---------|--------|---------|------|---------------------|")
+            w("| Feature | Reason | Incremental VIF | ΔAUC | Marginal Complexity |")
+            w("|---------|--------|----------------|------|---------------------|")
             for d in dropped:
+                iv = d.get("incremental_vif")
+                iv_str = f"{iv:.2f}" if iv is not None else "∞"
                 w(f"| {d['feature']} | {d['reason']} "
-                  f"| {d['max_corr_with_selected']:.3f} "
+                  f"| {iv_str} "
                   f"| {d['auc_gain']:+.4f} "
                   f"| {d.get('marginal_complexity', float('nan')):.4f} |")
         w()
