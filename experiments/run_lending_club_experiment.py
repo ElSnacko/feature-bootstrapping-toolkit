@@ -99,6 +99,10 @@ FWD_CV_FOLDS = 5
 FWD_VIF_THRESHOLD = 5.0      # incremental VIF above which a candidate is collinear
 FWD_MIN_AUC_GAIN = 0.003     # minimum ΔAUCroc to admit a feature
 FWD_COLLINEAR_AUC_PREMIUM = 0.005  # extra ΔAUC required when incremental VIF > threshold
+FWD_MAX_FINAL_VIF = 10.0     # post-selection VIF ceiling; features above this are pruned
+
+# Stage flags
+RUN_SYNTHETIC = False  # synthetic ground-truth validation (slow; opt-in via --synthetic)
 
 # Deep-dive features (one per behavioural theme)
 DEEP_DIVE = [
@@ -533,6 +537,27 @@ def run_forward_cv_selection(
             **{f"cv_{k}": v for k, v in trial.items()},
         })
 
+    # ── post-selection VIF pruning ────────────────────────────────────
+    # The incremental-VIF guard fires at entry time when the selected set
+    # is small, so a feature can enter cleanly but end up with a very high
+    # final-set VIF once later features fill in the surrounding space
+    # (e.g. loan_to_income and installment_to_income are jointly linear).
+    # Iteratively drop the highest-VIF feature until all are below the ceiling.
+    vif_pruned: list = []
+    if len(selected) >= 2:
+        log(f"\n  Post-selection VIF pruning (ceiling VIF={FWD_MAX_FINAL_VIF}) ...")
+        while len(selected) >= 2:
+            vif_now = _compute_vif(X_full[selected])
+            max_row = vif_now[0]  # _compute_vif returns sorted descending
+            if (max_row["vif"] or 0) <= FWD_MAX_FINAL_VIF:
+                break
+            feat_out = max_row["feature"]
+            vif_pruned.append({"feature": feat_out, "vif": max_row["vif"]})
+            selected.remove(feat_out)
+            log(f"  VIF-prune {feat_out:<35s}  VIF={max_row['vif']:.2f}")
+        if vif_pruned:
+            log(f"  Pruned {len(vif_pruned)} feature(s) above VIF ceiling")
+
     # ── final metrics & diagnostics ───────────────────────────────────
     final = _cv_metrics(selected)
     n_coll = sum(1 for d in dropped if d["is_collinear"])
@@ -555,10 +580,12 @@ def run_forward_cv_selection(
         "full_set_metrics": full_metrics,
         "final_metrics": final,
         "step_results": step_results,
+        "vif_pruned": vif_pruned,
         "vif_report": vif_report,
         "config": {
             "cv_folds": FWD_CV_FOLDS,
             "vif_threshold": FWD_VIF_THRESHOLD,
+            "max_final_vif": FWD_MAX_FINAL_VIF,
             "min_auc_gain": FWD_MIN_AUC_GAIN,
             "collinear_auc_premium": FWD_COLLINEAR_AUC_PREMIUM,
             "candidate_ordering": "ascending_initial_vif",
@@ -805,7 +832,7 @@ def run_drift(X, y):
 # ═══════════════════════════════════════════════════════════════════════
 # STAGE 8b — TEMPORAL VALIDATION (out-of-time)
 # ═══════════════════════════════════════════════════════════════════════
-def run_temporal_validation(data_path, marginal_panel):
+def run_temporal_validation(data_path, marginal_panel, features=None):
     """Validate that dev-period complexity scores predict holdout-period degradation."""
     log("\nSTAGE 8b — TEMPORAL VALIDATION (out-of-time)")
     from scipy.stats import spearmanr, mannwhitneyu
@@ -820,11 +847,16 @@ def run_temporal_validation(data_path, marginal_panel):
         sample_n=SAMPLE_N, random_state=42,
     )
 
-    # Align columns (some may have been dropped differently per period)
+    # Align columns — restrict to forward-selected features when available
     common_cols = sorted(set(dev_feats.columns) & set(ho_feats.columns))
+    if features:
+        selected_set = set(features)
+        common_cols = [c for c in common_cols if c in selected_set]
+        log(f"  {len(common_cols)} selected features present in both periods")
+    else:
+        log(f"  {len(common_cols)} common features across periods")
     dev_feats = dev_feats[common_cols]
     ho_feats = ho_feats[common_cols]
-    log(f"  {len(common_cols)} common features across periods")
 
     # ── Step 2: compute holdout-vs-dev metrics per feature ───────────
     log("  Computing temporal shift metrics ...")
@@ -1232,6 +1264,8 @@ def main():
                         help="Subsample size (default 30000). Use 0 for all data.")
     parser.add_argument("--start-stage", type=int, default=1, choices=range(1, 10))
     parser.add_argument("--shap-retrain", action="store_true", default=False)
+    parser.add_argument("--synthetic", action="store_true", default=RUN_SYNTHETIC,
+                        help="Run synthetic ground-truth validation (Stage 7, off by default)")
     args = parser.parse_args()
 
     sample_n = args.sample_n if args.sample_n > 0 else None
@@ -1308,11 +1342,16 @@ def main():
         comparison = comp_json
         comparison["comparison"] = pd.DataFrame(comp_json["per_feature"])
 
-    # Stage 7
-    if start <= 7:
+    # Stage 7 — synthetic validation (opt-in via --synthetic)
+    if args.synthetic and start <= 7:
         synthetic_results = run_synthetic()
     else:
-        synthetic_results = json.loads((OUTPUT_DIR / "synthetic_results.json").read_text())
+        syn_path = OUTPUT_DIR / "synthetic_results.json"
+        if syn_path.exists():
+            synthetic_results = json.loads(syn_path.read_text())
+        else:
+            synthetic_results = {}
+            log("\n  Stage 7 — synthetic skipped (pass --synthetic to enable)")
 
     # Stage 8
     if start <= 8:
@@ -1322,7 +1361,7 @@ def main():
 
     # Stage 8b — Temporal validation
     if start <= 8:
-        temporal_results = run_temporal_validation(args.data_path, marginal_panel)
+        temporal_results = run_temporal_validation(args.data_path, marginal_panel, FEATURES)
     else:
         tv_path = OUTPUT_DIR / "temporal_validation_results.json"
         temporal_results = json.loads(tv_path.read_text()) if tv_path.exists() else None
