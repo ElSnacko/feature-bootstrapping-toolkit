@@ -94,6 +94,12 @@ PERM_RESAMPLES = 10
 # Meta-bootstrap
 META_SPLITS = 10
 
+# Forward CV feature selection (Stage 2b)
+FWD_CV_FOLDS = 5
+FWD_VIF_THRESHOLD = 5.0      # incremental VIF above which a candidate is collinear
+FWD_MIN_AUC_GAIN = 0.005     # minimum ΔAUCroc to admit a feature
+FWD_COLLINEAR_AUC_PREMIUM = 0.005  # extra ΔAUC required when incremental VIF > threshold
+
 # Deep-dive features (one per behavioural theme)
 DEEP_DIVE = [
     "inq_acceleration",         # credit-seeking velocity
@@ -224,6 +230,337 @@ def run_marginal(df, TARGET):
 
     log(f"  {len(summary)} features analysed")
     return panel
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# STAGE 2b — FORWARD CV FEATURE SELECTION
+# ═══════════════════════════════════════════════════════════════════════
+
+def _compute_vif(X_sel: pd.DataFrame) -> list:
+    """
+    Variance Inflation Factor for each column in X_sel.
+
+    VIF_j = 1 / (1 - R²_j), where R²_j comes from regressing column j
+    on all remaining columns via OLS.  Values > 10 indicate severe
+    multicollinearity; 5-10 is moderate.
+
+    Returns a list of dicts sorted by VIF descending.
+    """
+    if X_sel.shape[1] < 2:
+        return [{"feature": c, "vif": 1.0} for c in X_sel.columns]
+
+    X_arr = X_sel.values.astype(float)
+    X_arr = X_arr - X_arr.mean(axis=0)   # centre for numerical stability
+    records = []
+
+    for j, col in enumerate(X_sel.columns):
+        others = np.delete(X_arr, j, axis=1)
+        if np.linalg.matrix_rank(others) < others.shape[1]:
+            vif = np.inf
+        else:
+            coef, _, _, _ = np.linalg.lstsq(others, X_arr[:, j], rcond=None)
+            fitted = others @ coef
+            ss_res = float(np.sum((X_arr[:, j] - fitted) ** 2))
+            ss_tot = float(np.sum((X_arr[:, j] - X_arr[:, j].mean()) ** 2))
+            r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+            vif = 1.0 / (1.0 - r2) if r2 < 1.0 else np.inf
+
+        records.append({
+            "feature": col,
+            "vif": float(vif) if np.isfinite(vif) else None,
+        })
+
+    return sorted(records, key=lambda x: (x["vif"] or 0), reverse=True)
+
+
+def _plot_forward_selection_curve(step_results: list, output_dir: Path) -> None:
+    """
+    Four-panel plot of CV metric trajectories across forward selection steps.
+
+    Green vertical bands = feature admitted; red = feature rejected.
+    Alternative optimisation metrics shown alongside AUC so analysts can
+    evaluate whether a different primary criterion would change the outcome:
+
+    - AUC-ROC   : standard discrimination (primary optimisation target)
+    - Gini      : 2*AUC-1, common in credit scoring; same ordering as AUC
+    - KS stat   : max CDF separation, widely reported in consumer lending
+    - Brier     : proper scoring rule; penalises mis-calibration as well as
+                  poor discrimination — a lower-is-better complement to AUC
+    """
+    steps = [s for s in step_results if s.get("feature") is not None]
+    if not steps:
+        return
+
+    xs = [s["step"] for s in steps]
+    panels = [
+        ("cv_auc",   "CV AUC-ROC (↑)",             "#2980b9"),
+        ("cv_gini",  "CV Gini / Somers D (↑)",      "#27ae60"),
+        ("cv_ks",    "CV KS Statistic (↑)",          "#8e44ad"),
+        ("cv_brier", "CV Brier Score (↓ better)",    "#e74c3c"),
+    ]
+
+    fig, axes = plt.subplots(2, 2, figsize=(13, 8))
+    for ax, (key, label, color) in zip(axes.flat, panels):
+        ys = [s.get(key, np.nan) for s in steps]
+        ax.plot(xs, ys, color=color, linewidth=2, zorder=3)
+
+        for s in steps:
+            band_color = "#2ecc71" if s.get("action") == "add" else "#e74c3c"
+            ax.axvline(s["step"], color=band_color, alpha=0.12, linewidth=1)
+
+        ax.set_xlabel("Forward selection step", fontsize=9)
+        ax.set_ylabel(label, fontsize=9)
+        ax.set_title(label, fontsize=10)
+        ax.grid(True, alpha=0.3)
+
+    fig.suptitle(
+        "Forward CV Feature Selection — Metric Trajectories\n"
+        "(green bands = admitted, red = rejected)",
+        fontsize=12,
+    )
+    fig.tight_layout()
+    path = str(output_dir / "fig_forward_cv_selection.png")
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    log(f"  saved  {path}")
+
+
+def run_forward_cv_selection(
+    df: pd.DataFrame,
+    TARGET: str,
+    FEATURES: list,
+    marginal_panel: dict,
+) -> dict:
+    """
+    Stage 2b — Forward stepwise CV feature selection.
+
+    PURPOSE
+    -------
+    Removes features that inflate the collinearity of the feature space
+    without adding commensurate model-attribution signal.  This improves
+    downstream SHAP stability and reduces variance in permutation-importance
+    rankings, two known consequences of correlated predictors.
+
+    ALGORITHM
+    ---------
+    1. Compute the initial VIF of every candidate using the full feature
+       matrix.  Sort candidates ascending by VIF so the most orthogonal
+       features enter first.  This ordering is independent of marginal
+       stability scores, making the selection orthogonal to Stage 2.
+    2. Maintain a growing selected set S (initially empty).
+    3. For each candidate f (in ascending-VIF order):
+         a. Compute the *incremental* VIF of f given S: regress f on all
+            features already in S and derive VIF = 1/(1−R²).  This
+            captures multivariate collinearity — how much of f's variance
+            the joint linear combination of S already explains — rather
+            than the maximum of pairwise correlations.
+         b. Evaluate CV metrics (AUC, Gini, KS, Brier) for S ∪ {f}.
+         c. Compute ΔAUC = AUC(S ∪ {f}) − AUC(S).
+         d. Admit f if ΔAUC ≥ required_gain, where:
+              required_gain = FWD_MIN_AUC_GAIN
+                            + FWD_COLLINEAR_AUC_PREMIUM  (if incremental VIF > threshold)
+            A collinear feature must prove unique predictive signal beyond
+            what S already captures.
+    4. Compute VIF for the final selected set as a post-hoc audit.
+
+    OPTIMISATION METRIC
+    -------------------
+    Primary: AUC-ROC (threshold-free, handles class imbalance well).
+
+    Alternatives tracked at each step — choose a different primary if:
+    • Gini / Somers D  — identical ordering to AUC; preferred in regulatory
+                         credit-risk scorecards (Basel, IFRS 9).
+    • KS statistic     — max CDF separation; natural cut-point for scoring
+                         bands; legacy metric in US consumer lending.
+    • Brier score      — proper scoring rule; penalises bad calibration and
+                         discrimination jointly; use when predicted probabilities
+                         feed downstream pricing or provisioning models.
+    • Log-loss / NLL   — another proper rule; differentiable, useful when
+                         the model is used inside a larger optimisation loop.
+    • Partial AUC      — restrict ROC integration to low FPR region; prefer
+                         when false-positive costs dominate (fraud, collections).
+    • AUCPR            — precision-recall AUC; strictly better than AUC-ROC
+                         when positive-class prevalence is < ~5%.
+
+    Returns
+    -------
+    dict with keys: selected_features, dropped_features, n_selected,
+    n_dropped, n_collinear_dropped, n_no_gain_dropped, final_metrics,
+    step_results, vif_report, config.
+    """
+    from sklearn.model_selection import StratifiedKFold, cross_val_predict
+    from sklearn.metrics import roc_auc_score, brier_score_loss, roc_curve
+
+    log("\nSTAGE 2b — FORWARD CV FEATURE SELECTION (primary: AUC-ROC)")
+
+    y = df[TARGET]
+    # Fill NaN with column median so LightGBM sees complete rows every fold.
+    X_full = df[FEATURES].copy().fillna(df[FEATURES].median())
+
+    # ── rank candidates by ascending initial VIF ─────────────────────
+    # Ordering is intentionally independent of marginal stability scores
+    # so that Stage 2b is orthogonal to Stage 2.  Features with low VIF
+    # in the full feature matrix are most orthogonal to the rest; they
+    # enter first and form the stable core of the selected set.
+    log("  Computing initial VIF for candidate ordering ...")
+    initial_vif = {
+        row["feature"]: (row["vif"] if row["vif"] is not None else np.inf)
+        for row in _compute_vif(X_full)
+    }
+    candidates = sorted(FEATURES, key=lambda f: initial_vif.get(f, np.inf))
+    log(f"  {len(candidates)} candidates ordered by ascending VIF "
+        f"(low VIF = orthogonal, enters first)")
+
+    cv = StratifiedKFold(n_splits=FWD_CV_FOLDS, shuffle=True, random_state=42)
+
+    def _cv_metrics(feature_set: list) -> dict:
+        """Cross-validated AUC, Gini, KS, Brier for a feature set."""
+        if not feature_set:
+            return {"auc": 0.5, "gini": 0.0, "ks": 0.0, "brier": 1.0}
+        X_sel = X_full[feature_set].values
+        probas = cross_val_predict(
+            lgbm_factory(), X_sel, y.values,
+            cv=cv, method="predict_proba", n_jobs=1,
+        )[:, 1]
+        auc = float(roc_auc_score(y, probas))
+        gini = 2.0 * auc - 1.0
+        fpr, tpr, _ = roc_curve(y, probas)
+        ks = float(np.max(np.abs(tpr - fpr)))
+        brier = float(brier_score_loss(y, probas))
+        return {"auc": auc, "gini": gini, "ks": ks, "brier": brier}
+
+    def _incremental_vif(feat: str, selected: list) -> float:
+        """
+        VIF of feat when tentatively added to the current selected set.
+
+        Regresses feat on the joint linear span of selected features and
+        returns VIF = 1 / (1 − R²).  Captures multivariate collinearity:
+        a high value means selected already explains most of feat's
+        variance, so feat contributes little orthogonal signal.
+
+        VIF > 5  → moderate collinearity (requires AUC premium to admit)
+        VIF > 10 → severe collinearity
+        """
+        if not selected:
+            return 1.0
+        X_others = X_full[selected].values.astype(float)
+        x_feat = X_full[feat].values.astype(float)
+        # Centre for numerical stability
+        X_others = X_others - X_others.mean(axis=0)
+        x_feat = x_feat - x_feat.mean()
+        ss_tot = float(np.dot(x_feat, x_feat))
+        if ss_tot == 0.0:
+            return 1.0
+        if np.linalg.matrix_rank(X_others) < X_others.shape[1]:
+            return np.inf
+        coef, _, _, _ = np.linalg.lstsq(X_others, x_feat, rcond=None)
+        ss_res = float(np.sum((x_feat - X_others @ coef) ** 2))
+        r2 = max(0.0, min(1.0 - ss_res / ss_tot, 1.0 - 1e-9))
+        return 1.0 / (1.0 - r2)
+
+    # ── greedy forward pass ───────────────────────────────────────────
+    selected: list = []
+    dropped: list = []
+    step_results: list = []
+
+    baseline = _cv_metrics([])
+    log(f"  Baseline (empty set): AUC={baseline['auc']:.4f}")
+    step_results.append({
+        "step": 0, "feature": None, "action": None,
+        "selected_count": 0, "incremental_vif": None,
+        "is_collinear": None, "auc_gain": None,
+        **{f"cv_{k}": v for k, v in baseline.items()},
+    })
+    current = baseline
+
+    for step_idx, feat in enumerate(candidates, start=1):
+        inc_vif = _incremental_vif(feat, selected)
+        is_collinear = np.isfinite(inc_vif) and inc_vif > FWD_VIF_THRESHOLD
+
+        trial = _cv_metrics(selected + [feat])
+        delta = trial["auc"] - current["auc"]
+        required = FWD_MIN_AUC_GAIN + (FWD_COLLINEAR_AUC_PREMIUM if is_collinear else 0.0)
+
+        vif_str = f"{inc_vif:.2f}" if np.isfinite(inc_vif) else "inf"
+
+        if delta >= required:
+            selected.append(feat)
+            current = trial
+            action = "add"
+            log(f"  [{step_idx:2d}] ADD  {feat:<35s}"
+                f"  AUC={trial['auc']:.4f}  Δ={delta:+.4f}  VIF={vif_str}")
+        else:
+            reason = (
+                f"collinear|VIF={vif_str}"
+                if is_collinear
+                else f"no_gain|Δ={delta:.4f}"
+            )
+            dropped.append({
+                "feature": feat,
+                "reason": reason,
+                "incremental_vif": float(inc_vif) if np.isfinite(inc_vif) else None,
+                "auc_gain": delta,
+                "is_collinear": is_collinear,
+                "marginal_complexity": float(
+                    m_results.get(feat, {}).get("complexity_score", np.nan)
+                ),
+            })
+            action = "drop"
+            log(f"  [{step_idx:2d}] DROP {feat:<35s}"
+                f"  Δ={delta:+.4f}  VIF={vif_str}  [{reason}]")
+
+        step_results.append({
+            "step": step_idx,
+            "feature": feat,
+            "action": action,
+            "selected_count": len(selected),
+            "incremental_vif": float(inc_vif) if np.isfinite(inc_vif) else None,
+            "is_collinear": bool(is_collinear),
+            "auc_gain": float(delta),
+            **{f"cv_{k}": v for k, v in trial.items()},
+        })
+
+    # ── final metrics & diagnostics ───────────────────────────────────
+    final = _cv_metrics(selected)
+    n_coll = sum(1 for d in dropped if d["is_collinear"])
+    n_gain = sum(1 for d in dropped if not d["is_collinear"])
+
+    log(f"\n  Selected {len(selected)}/{len(candidates)} features")
+    log(f"  AUC={final['auc']:.4f}  Gini={final['gini']:.4f}"
+        f"  KS={final['ks']:.4f}  Brier={final['brier']:.4f}")
+    log(f"  Dropped: {n_coll} collinear, {n_gain} no-gain")
+
+    vif_report = _compute_vif(X_full[selected]) if selected else []
+
+    result = {
+        "selected_features": selected,
+        "dropped_features": dropped,
+        "n_selected": len(selected),
+        "n_dropped": len(dropped),
+        "n_collinear_dropped": n_coll,
+        "n_no_gain_dropped": n_gain,
+        "final_metrics": final,
+        "step_results": step_results,
+        "vif_report": vif_report,
+        "config": {
+            "cv_folds": FWD_CV_FOLDS,
+            "vif_threshold": FWD_VIF_THRESHOLD,
+            "min_auc_gain": FWD_MIN_AUC_GAIN,
+            "collinear_auc_premium": FWD_COLLINEAR_AUC_PREMIUM,
+            "candidate_ordering": "ascending_initial_vif",
+            "collinearity_check": "incremental_vif",
+            "optimisation_metric": "auc",
+            "alternative_metrics": {
+                "gini": "2*AUC-1; same ordering, preferred in regulatory scorecards",
+                "ks":   "max CDF separation; legacy metric in US consumer lending",
+                "brier": "proper scoring rule; penalises mis-calibration alongside poor discrimination",
+            },
+        },
+    }
+
+    save_json(result, "forward_cv_selection.json")
+    _plot_forward_selection_curve(step_results, OUTPUT_DIR)
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -637,7 +974,7 @@ def run_temporal_validation(data_path, marginal_panel):
 def write_synthesis(
     eda, marginal_panel, shap_panel, perm_results,
     ci_results, comparison, synthetic_results, drift,
-    feature_groups, temporal_results=None,
+    feature_groups, temporal_results=None, fwd_result=None,
 ):
     log("\nSTAGE 9 — WRITING SYNTHESIS")
 
@@ -674,6 +1011,62 @@ def write_synthesis(
           f"{cs:.3f} | {row.get('spearman_floor', float('nan')):.4f} | "
           f"{row.get('iv_floor', float('nan')):.4f} |")
     w()
+
+    # Forward CV feature selection
+    if fwd_result is not None:
+        w("## Forward CV Feature Selection (Stage 2b)")
+        w()
+        cfg = fwd_result.get("config", {})
+        fm = fwd_result.get("final_metrics", {})
+        w(f"**Optimisation metric**: {cfg.get('optimisation_metric', 'auc').upper()} "
+          f"(CV folds={cfg.get('cv_folds', '?')})")
+        w()
+        w(f"**Candidate ordering**: {cfg.get('candidate_ordering', '?')} "
+          f"(orthogonal to marginal stability)")
+        w()
+        w(f"**Collinearity check**: incremental VIF > {cfg.get('vif_threshold', '?')} "
+          f"requires +{cfg.get('collinear_auc_premium', '?'):.3f} ΔAUC premium")
+        w()
+        w(f"**Result**: {fwd_result['n_selected']} features selected, "
+          f"{fwd_result['n_dropped']} dropped "
+          f"({fwd_result['n_collinear_dropped']} collinear, "
+          f"{fwd_result['n_no_gain_dropped']} no-gain)")
+        w()
+        w(f"**Final CV metrics** — "
+          f"AUC={fm.get('auc', float('nan')):.4f}  "
+          f"Gini={fm.get('gini', float('nan')):.4f}  "
+          f"KS={fm.get('ks', float('nan')):.4f}  "
+          f"Brier={fm.get('brier', float('nan')):.4f}")
+        w()
+        w("### Selected features")
+        w()
+        for f in fwd_result.get("selected_features", []):
+            w(f"- {f}")
+        w()
+        dropped = fwd_result.get("dropped_features", [])
+        if dropped:
+            w("### Dropped features")
+            w()
+            w("| Feature | Reason | Incremental VIF | ΔAUC | Marginal Complexity |")
+            w("|---------|--------|----------------|------|---------------------|")
+            for d in dropped:
+                iv = d.get("incremental_vif")
+                iv_str = f"{iv:.2f}" if iv is not None else "∞"
+                w(f"| {d['feature']} | {d['reason']} "
+                  f"| {iv_str} "
+                  f"| {d['auc_gain']:+.4f} "
+                  f"| {d.get('marginal_complexity', float('nan')):.4f} |")
+        w()
+        vif = fwd_result.get("vif_report", [])
+        if vif:
+            w("### VIF — selected feature set")
+            w()
+            w("| Feature | VIF |")
+            w("|---------|-----|")
+            for row in vif:
+                vif_val = f"{row['vif']:.2f}" if row["vif"] is not None else "∞"
+                w(f"| {row['feature']} | {vif_val} |")
+        w()
 
     # Permutation baseline
     w("## Permutation Baseline (Target-Dependent)")
@@ -844,6 +1237,25 @@ def main():
         log("\n  [re-running stage 2 for live objects]")
         marginal_panel = run_marginal(df, TARGET)
 
+    # Stage 2b — Forward CV feature selection
+    if start <= 2:
+        fwd_result = run_forward_cv_selection(df, TARGET, FEATURES, marginal_panel)
+    else:
+        fcs_path = OUTPUT_DIR / "forward_cv_selection.json"
+        if fcs_path.exists():
+            fwd_result = json.loads(fcs_path.read_text())
+        else:
+            log("\n  [stage 2b artefact missing — re-running forward CV selection]")
+            fwd_result = run_forward_cv_selection(df, TARGET, FEATURES, marginal_panel)
+
+    # Propagate selected feature set to all downstream stages
+    if fwd_result and fwd_result.get("selected_features"):
+        FEATURES = fwd_result["selected_features"]
+        log(f"\n  Downstream stages use {len(FEATURES)} forward-selected features "
+            f"(dropped {fwd_result['n_dropped']} — "
+            f"{fwd_result['n_collinear_dropped']} collinear, "
+            f"{fwd_result['n_no_gain_dropped']} no-gain)")
+
     # Stage 3
     if start <= 3:
         shap_panel, X, y = run_shap(df, TARGET, FEATURES, args.shap_retrain)
@@ -902,7 +1314,7 @@ def main():
     write_synthesis(
         eda, marginal_panel, shap_panel, perm_results,
         ci_results, comparison, synthetic_results, drift,
-        feature_groups, temporal_results,
+        feature_groups, temporal_results, fwd_result,
     )
 
     log()
