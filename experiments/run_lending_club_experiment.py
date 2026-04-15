@@ -459,6 +459,18 @@ def run_forward_cv_selection(
         r2 = max(0.0, min(1.0 - ss_res / ss_tot, 1.0 - 1e-9))
         return 1.0 / (1.0 - r2)
 
+    # ── full-set baseline ─────────────────────────────────────────────
+    # Evaluate the model on all candidates before any selection.  This
+    # anchors the forward process: the final selected-set metrics can be
+    # compared directly against the full-feature ceiling.
+    log("  Evaluating full feature set (pre-selection baseline) ...")
+    full_metrics = _cv_metrics(candidates)
+    log(f"  Full set  ({len(candidates)} features): "
+        f"AUC={full_metrics['auc']:.4f}  "
+        f"Gini={full_metrics['gini']:.4f}  "
+        f"KS={full_metrics['ks']:.4f}  "
+        f"Brier={full_metrics['brier']:.4f}")
+
     # ── greedy forward pass ───────────────────────────────────────────
     selected: list = []
     dropped: list = []
@@ -540,6 +552,7 @@ def run_forward_cv_selection(
         "n_dropped": len(dropped),
         "n_collinear_dropped": n_coll,
         "n_no_gain_dropped": n_gain,
+        "full_set_metrics": full_metrics,
         "final_metrics": final,
         "step_results": step_results,
         "vif_report": vif_report,
@@ -1033,11 +1046,14 @@ def write_synthesis(
           f"({fwd_result['n_collinear_dropped']} collinear, "
           f"{fwd_result['n_no_gain_dropped']} no-gain)")
         w()
-        w(f"**Final CV metrics** — "
-          f"AUC={fm.get('auc', float('nan')):.4f}  "
-          f"Gini={fm.get('gini', float('nan')):.4f}  "
-          f"KS={fm.get('ks', float('nan')):.4f}  "
-          f"Brier={fm.get('brier', float('nan')):.4f}")
+        full_m = fwd_result.get("full_set_metrics", {})
+        w("| Metric | Full set (pre-selection) | Selected set |")
+        w("|--------|--------------------------|--------------|")
+        for key, label in [("auc", "AUC-ROC"), ("gini", "Gini"),
+                           ("ks", "KS stat"), ("brier", "Brier ↓")]:
+            w(f"| {label} "
+              f"| {full_m.get(key, float('nan')):.4f} "
+              f"| {fm.get(key, float('nan')):.4f} |")
         w()
         w("### Selected features")
         w()
