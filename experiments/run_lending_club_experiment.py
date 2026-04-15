@@ -97,7 +97,7 @@ META_SPLITS = 10
 # Forward CV feature selection (Stage 2b)
 FWD_CV_FOLDS = 5
 FWD_VIF_THRESHOLD = 5.0      # incremental VIF above which a candidate is collinear
-FWD_MIN_AUC_GAIN = 0.005     # minimum ΔAUCroc to admit a feature
+FWD_MIN_AUC_GAIN = 0.003     # minimum ΔAUCroc to admit a feature
 FWD_COLLINEAR_AUC_PREMIUM = 0.005  # extra ΔAUC required when incremental VIF > threshold
 
 # Deep-dive features (one per behavioural theme)
