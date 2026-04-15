@@ -396,6 +396,7 @@ def run_forward_cv_selection(
     y = df[TARGET]
     # Fill NaN with column median so LightGBM sees complete rows every fold.
     X_full = df[FEATURES].copy().fillna(df[FEATURES].median())
+    m_results = marginal_panel["feature_results"]
 
     # ── rank candidates by ascending initial VIF ─────────────────────
     # Ordering is intentionally independent of marginal stability scores
