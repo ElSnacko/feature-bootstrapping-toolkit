@@ -82,6 +82,21 @@ python demo.py
 
 ## Quick Start
 
+### Bootstrap CI (simplest on-ramp)
+
+A percentile confidence interval on any statistic of a 1-D sample — the fastest
+way to use the toolkit before meeting learning curves:
+
+```python
+import numpy as np
+from bootstrap_stability import bootstrap_ci
+
+values = np.random.default_rng(0).normal(loc=0.0, scale=1.0, size=500)
+
+ci = bootstrap_ci(values, stat_fn=np.mean, n_boot=2000, ci=0.95, seed=42)
+print(ci["point_estimate"], ci["ci_lower"], ci["ci_upper"])
+```
+
 ### Basic Usage
 
 ```python
@@ -284,6 +299,24 @@ BootstrapStability(
     random_state=42,
     estimate_alpha=False,   # NEW: Fit alpha from data
     alpha_bounds=(0.1, 1.0), # NEW: Bounds for alpha estimation
+    n_pool_draws=1,         # NEW: Independent pools drawn per size; >1 smooths small-n curves
+)
+```
+
+#### Small-sample recipe
+
+The defaults (`min_pool=50`, `n_points=25`) assume thousands of rows. For small
+samples (a few hundred observations, e.g. per-variant trade R-multiples), the
+single pool drawn at each size dominates the instability estimate and the curve
+gets jagged. Use a smaller grid and average across several pool draws:
+
+```python
+bs = BootstrapStability(
+    min_pool=20,          # smaller floor for small n
+    n_points=12,          # fewer points — each must be well-populated
+    n_resamples=8,        # resamples within each pool
+    n_pool_draws=5,       # average instability across 5 pool draws per size
+    random_state=42,
 )
 ```
 
@@ -820,13 +853,9 @@ Expected output: `mean radius` has a lower complexity score than `symmetry error
 
 ## Documentation
 
-### Detailed Documentation Files
-
-| Document | Description |
-|----------|-------------|
-| [`docs/shap_stability_design.md`](docs/shap_stability_design.md) | SHAP stability metrics, API reference, integration patterns |
-| [`docs/reliability_score.md`](docs/reliability_score.md) | Reliability formula, component definitions, configuration |
-| [`docs/architecture_improvements.md`](docs/architecture_improvements.md) | System architecture, design decisions, extension points |
+The narrative, design rationale, and worked examples live in this README and in
+[`INTEGRATION_NOTES.md`](INTEGRATION_NOTES.md) (lessons from wiring the toolkit
+into an external project). Additional design docs are tracked separately.
 
 ---
 

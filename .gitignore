@@ -3,3 +3,9 @@ __pycache__/
 *.pyo
 *.png
 *.csv
+
+# build artifacts
+*.egg-info/
+build/
+dist/
+

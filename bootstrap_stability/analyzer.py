@@ -53,6 +53,7 @@ class BootstrapStability:
         fixed_alpha: float = 0.5,
         support_categorical: bool = False,
         categorical_cardinality_threshold: int = 10,
+        n_pool_draws: int = 1,
     ):
         self.resample_frac = resample_frac
         self.n_resamples = n_resamples
@@ -75,6 +76,9 @@ class BootstrapStability:
         self.fixed_alpha = fixed_alpha
         self.support_categorical = support_categorical
         self.categorical_cardinality_threshold = categorical_cardinality_threshold
+        if n_pool_draws < 1:
+            raise ValueError(f"n_pool_draws must be >= 1, got {n_pool_draws}")
+        self.n_pool_draws = int(n_pool_draws)
 
     def fit(self, df: pd.DataFrame, feature_col: str, target_col: str = None) -> dict:
         has_target = target_col is not None
@@ -132,17 +136,35 @@ class BootstrapStability:
         metric_runner = get_metric_runner(x_full, y_full, self.n_bins, feature_type)
 
         def _process_pool(pool_idx, n_pool):
-            seed = self.random_state
-            x_pool, y_pool = draw_pool(x_full, y_full, n_pool, seed + pool_idx)
-            resample_results, degen_count = run_bootstrap_on_pool(
-                x_pool, y_pool,
-                self.resample_frac,
-                self.n_resamples,
-                self.random_state,
-                pool_idx,
-                metric_runner,
-            )
-            return pool_idx, n_pool, resample_results, degen_count, x_pool
+            # Draw n_pool_draws independent pools at this size and combine their
+            # bootstrap resamples (Integration Notes fix #5). Averaging across
+            # draws smooths the small-n learning curve where a single pool draw
+            # otherwise dominates the instability estimate.
+            combined_results = []
+            total_degen = 0
+            first_x_pool = None
+            for d in range(self.n_pool_draws):
+                if self.n_pool_draws == 1:
+                    # Preserve historical seed scheme for bit-exact backwards compat.
+                    draw_seed = self.random_state + pool_idx
+                    eff_pool_idx = pool_idx
+                else:
+                    draw_seed = self.random_state + pool_idx * 1000 + d
+                    eff_pool_idx = pool_idx * self.n_pool_draws + d
+                x_pool, y_pool = draw_pool(x_full, y_full, n_pool, draw_seed)
+                if first_x_pool is None:
+                    first_x_pool = x_pool
+                resample_results, degen_count = run_bootstrap_on_pool(
+                    x_pool, y_pool,
+                    self.resample_frac,
+                    self.n_resamples,
+                    self.random_state,
+                    eff_pool_idx,
+                    metric_runner,
+                )
+                combined_results.extend(resample_results)
+                total_degen += degen_count
+            return pool_idx, n_pool, combined_results, total_degen, first_x_pool
 
         pool_outputs = Parallel(n_jobs=self.n_jobs, prefer="threads")(
             delayed(_process_pool)(i, n_pool)
@@ -157,8 +179,9 @@ class BootstrapStability:
         raw_bootstrap = {} if self.store_raw else None
         all_woe_results = []
 
+        total_resamples_per_pool = self.n_resamples * self.n_pool_draws
         for pool_idx, n_pool, resample_results, degen_count, x_pool in pool_outputs:
-            degen_rate = degen_count / self.n_resamples if self.n_resamples > 0 else 0.0
+            degen_rate = degen_count / total_resamples_per_pool if total_resamples_per_pool > 0 else 0.0
             degenerate_rates[int(n_pool)] = degen_rate
             pool_x_draws.append(x_pool)
 

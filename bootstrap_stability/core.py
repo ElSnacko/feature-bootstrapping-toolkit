@@ -11,7 +11,7 @@ from scipy.spatial.distance import jensenshannon
 logger = logging.getLogger(__name__)
 
 
-VERSION = "1.0.0"
+VERSION = "2.0.0"
 
 DEFAULT_WEIGHTS = {
     "target_dependent": {
@@ -308,6 +308,67 @@ def run_bootstrap_on_pool(x_pool, y_pool, resample_frac, n_resamples, base_seed,
             results.append(metrics)
 
     return results, degen_count
+
+
+def bootstrap_ci(values, stat_fn=np.mean, n_boot=2000, ci=0.95, seed=None):
+    """Percentile bootstrap confidence interval for an arbitrary statistic.
+
+    The simplest on-ramp to the toolkit: resample a 1-D sample with replacement
+    at full size (standard nonparametric bootstrap), apply ``stat_fn`` to each
+    draw, and return percentile-based CI bounds.
+
+    Parameters
+    ----------
+    values : array-like
+        1-D sample. NaN values are ignored.
+    stat_fn : callable, default np.mean
+        Statistic computed on each bootstrap resample. Must accept a 1-D array
+        and return a scalar.
+    n_boot : int, default 2000
+        Number of bootstrap resamples.
+    ci : float, default 0.95
+        Confidence level in (0, 1), e.g. 0.95 for a 95% CI.
+    seed : int or None, default None
+        Seed for reproducibility. Pass an int for deterministic results.
+
+    Returns
+    -------
+    dict
+        Keys: ``point_estimate`` (stat_fn on the full sample), ``ci_lower``,
+        ``ci_upper``, ``n_boot``, ``ci``, ``seed``.
+
+    Raises
+    ------
+    ValueError
+        If ``values`` is empty (after dropping NaN) or ``ci`` is not in (0, 1).
+    """
+    values = np.asarray(values, dtype=float)
+    values = values[~np.isnan(values)]
+    n = len(values)
+    if n == 0:
+        raise ValueError("values must contain at least one non-NaN sample")
+    if not 0.0 < ci < 1.0:
+        raise ValueError(f"ci must be in (0, 1), got {ci}")
+
+    n_boot = int(n_boot)
+    rng = np.random.default_rng(seed)
+    stats = np.empty(n_boot, dtype=float)
+    for b in range(n_boot):
+        idx = rng.integers(0, n, size=n)
+        stats[b] = float(stat_fn(values[idx]))
+
+    alpha = 1.0 - ci
+    ci_lower = float(np.percentile(stats, 100.0 * (alpha / 2.0)))
+    ci_upper = float(np.percentile(stats, 100.0 * (1.0 - alpha / 2.0)))
+
+    return {
+        "point_estimate": float(stat_fn(values)),
+        "ci_lower": ci_lower,
+        "ci_upper": ci_upper,
+        "n_boot": n_boot,
+        "ci": float(ci),
+        "seed": seed,
+    }
 
 
 def _estimate_bandwidth(x) -> float:

@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bootstrap-stability"
+version = "2.0.0"
+description = "Feature stability analysis for credit risk modeling using bootstrap learning curves."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [{name = "ElSnacko"}]
+keywords = ["bootstrap", "stability", "credit-risk", "learning-curve", "feature-selection"]
+dependencies = [
+    "numpy",
+    "scipy",
+    "pandas",
+]
+
+[project.optional-dependencies]
+# Optional stacks (Integration Notes fix #1 / fix #3): the core (numpy/scipy/
+# pandas) always imports; these gate the heavier submodules.
+parallel = ["joblib"]
+viz = ["matplotlib"]
+meta = ["scikit-learn"]
+shap = ["joblib", "lightgbm", "shap"]
+tests = ["pytest"]
+all = ["bootstrap-stability[parallel,viz,meta,shap]"]
+
+[project.urls]
+Homepage = "https://github.com/ElSnacko/feature-bootstrapping-toolkit"
+Repository = "https://github.com/ElSnacko/feature-bootstrapping-toolkit"
+
+[tool.setuptools]
+packages = ["bootstrap_stability"]
